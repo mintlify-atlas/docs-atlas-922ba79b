@@ -1,0 +1,84 @@
+---
+title: "kalibr_bagcreater — create ROS bags from image folders"
+description: "Convert timestamped image folders and IMU CSV files into a ROS bag for Kalibr. Expects cam0/cam1 subdirectories and imu0.csv with timestamp, omega, and alpha."
+---
+
+`kalibr_bagcreater` converts a dataset directory containing timestamped camera images and IMU measurements into a ROS bag file. This is the recommended way to prepare data collected outside of ROS — for example, from a custom sensor driver or a dataset that was recorded in a non-ROS format — for use with all Kalibr calibration tools.
+
+## Synopsis
+
+```bash
+kalibr_bagcreater --folder <dataset_dir> --output-bag <output.bag>
+```
+
+## Example
+
+```bash
+kalibr_bagcreater --folder /data/my_dataset --output-bag /data/my_dataset.bag
+```
+
+## Dataset directory structure
+
+The tool expects the following directory layout inside `--folder`:
+
+```
+dataset/
+├── cam0/
+│   ├── 1385030880.100000000.png
+│   ├── 1385030880.133333333.png
+│   └── ...
+├── cam1/
+│   ├── 1385030880.100000000.png
+│   └── ...
+├── imu0.csv
+└── imu1.csv   # optional, for multi-IMU setups
+```
+
+**Camera folders** must be named with the prefix `cam` (e.g., `cam0`, `cam1`). Each image file must be named with its timestamp in nanoseconds: `<seconds><nanoseconds>.png` (zero-padded to 9 nanosecond digits).
+
+**IMU CSV files** must start with the prefix `imu` and use the `.csv` extension (e.g., `imu0.csv`, `imu1.csv`). Each row contains:
+
+```
+timestamp_ns, omega_x, omega_y, omega_z, alpha_x, alpha_y, alpha_z
+```
+
+where `omega` is angular velocity in rad/s and `alpha` is linear acceleration in m/s².
+
+## Flags
+
+<ParamField query="--folder" type="string">
+  Path to the dataset directory. The tool scans this directory recursively for `cam*` subdirectories and `imu*.csv` files.
+</ParamField>
+
+<ParamField query="--output-bag" type="string">
+  Path and filename for the output ROS bag. Default: `output.bag`.
+</ParamField>
+
+## Output topics
+
+The tool publishes the following ROS topics into the bag:
+
+| Source | ROS topic | Message type |
+|---|---|---|
+| `cam0/` images | `/cam0/image_raw` | `sensor_msgs/Image` |
+| `cam1/` images | `/cam1/image_raw` | `sensor_msgs/Image` |
+| `imu0.csv` | `/imu0` | `sensor_msgs/Imu` |
+| `imu1.csv` | `/imu1` | `sensor_msgs/Imu` |
+
+Images are published as `mono8` (grayscale). The topic name is derived from the folder or file name: `cam0` → `/cam0/image_raw`, `imu0` → `/imu0`.
+
+<Note>
+  Images are read as grayscale with OpenCV. Color images are converted to single-channel `mono8` automatically.
+</Note>
+
+## Supported image formats
+
+The tool accepts images with the following extensions: `.bmp`, `.png`, `.jpg`. All images within a camera folder are sorted by timestamp (derived from filename) before being written to the bag.
+
+## Related pages
+
+- [Multi-camera calibration guide](/guides/multi-camera-calibration)
+- [Camera-IMU calibration guide](/guides/camera-imu-calibration)
+- [Calibration targets overview](/targets/overview)
+- [kalibr_calibrate_cameras](/reference/kalibr-calibrate-cameras)
+- [kalibr_calibrate_imu_camera](/reference/kalibr-calibrate-imu-camera)

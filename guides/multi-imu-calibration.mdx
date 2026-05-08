@@ -1,0 +1,144 @@
+---
+title: "Multi-IMU spatial and temporal calibration"
+description: "Calibrate multiple IMUs relative to a reference IMU, estimating spatial transforms and time offsets, with at least one aiding camera."
+---
+
+When a platform carries more than one IMU, you need to know the rigid-body transformation between them and any time offset in their timestamps. `kalibr_calibrate_imu_camera` supports multi-IMU setups by accepting multiple `--imu` YAML files. The first IMU listed becomes the reference sensor; all other IMUs are calibrated relative to it.
+
+At least one camera is required as an aiding sensor. The camera provides the visual observations that anchor the continuous-time trajectory, which in turn allows the spatial and temporal relationships between IMUs to be estimated.
+
+<Info>
+  Multi-IMU calibration is an extension of the camera-IMU workflow. Read the [camera-IMU calibration guide](/guides/camera-imu-calibration) first for background on the required inputs and the general calibration procedure.
+</Info>
+
+## How multi-IMU calibration works
+
+The calibrator fits a single continuous-time B-spline trajectory to the visual observations from the camera chain. Each IMU is then registered against this common trajectory:
+
+- The **reference IMU** (first in the list) defines the body frame. Its pose relative to the camera chain is the primary calibration result, identical to the single-IMU case.
+- **Additional IMUs** have their orientation priors estimated by cross-correlating angular rate norms against the reference IMU, then refined jointly with all other parameters in the batch optimizer.
+
+Time offsets between IMUs can be estimated from the same cross-correlation (`--imu-delay-by-correlation`) and are then held fixed or refined as design variables.
+
+## Prerequisites
+
+- A ROS bag with image topics from at least one camera and IMU topics from every IMU
+- `camchain.yaml` from a prior camera calibration run
+- One `imu.yaml` per IMU with noise parameters and the corresponding ROS topic
+- `aprilgrid.yaml` target configuration
+
+## Step-by-step calibration
+
+<Steps>
+  <Step title="Prepare one IMU YAML per sensor">
+    Each IMU needs its own YAML file with the appropriate `rostopic` and noise parameters:
+
+    ```yaml imu0.yaml (reference IMU)
+    rostopic: /imu0
+    update_rate: 200.0
+    accelerometer_noise_density: 0.006
+    accelerometer_random_walk:   0.0002
+    gyroscope_noise_density:     0.0004
+    gyroscope_random_walk:       4.0e-06
+    ```
+
+    ```yaml imu1.yaml (secondary IMU)
+    rostopic: /imu1
+    update_rate: 400.0
+    accelerometer_noise_density: 0.003
+    accelerometer_random_walk:   0.0001
+    gyroscope_noise_density:     0.0002
+    gyroscope_random_walk:       2.0e-06
+    ```
+
+    <Warning>
+      The order of `--imu` arguments determines which sensor is the reference IMU. The first argument is always treated as the reference; its body-frame pose is fixed to the identity transformation.
+    </Warning>
+  </Step>
+
+  <Step title="Record a calibration bag">
+    Motion requirements are the same as for single-IMU calibration: full 6-DOF excitation with the AprilGrid target visible in the camera throughout. Ensure that all IMU topics are being published at their expected rates.
+
+    <Tip>
+      If the IMUs have significantly different noise levels, longer recordings or more energetic motion will help the lower-quality IMU accumulate sufficient observations for a reliable calibration.
+    </Tip>
+  </Step>
+
+  <Step title="Run the calibrator with multiple IMUs">
+    Pass one `--imu` and one `--imu-models` entry for each IMU in the same order:
+
+    ```bash
+    kalibr_calibrate_imu_camera \
+      --bag MYROSBAG.bag \
+      --cam camchain.yaml \
+      --imu imu0.yaml imu1.yaml \
+      --imu-models calibrated calibrated \
+      --target aprilgrid.yaml
+    ```
+
+    The reference IMU is `imu0.yaml` (first). `imu1.yaml` will have its transformation relative to `imu0` estimated by the optimizer.
+  </Step>
+
+  <Step title="Enable IMU-to-IMU time delay estimation">
+    By default, no temporal calibration is performed between IMUs — only between the camera chain and the reference IMU. To also estimate the time delay between each secondary IMU and the reference IMU, add `--imu-delay-by-correlation`:
+
+    ```bash
+    kalibr_calibrate_imu_camera \
+      --bag MYROSBAG.bag \
+      --cam camchain.yaml \
+      --imu imu0.yaml imu1.yaml \
+      --imu-models calibrated calibrated \
+      --imu-delay-by-correlation \
+      --target aprilgrid.yaml
+    ```
+
+    The delay is estimated by cross-correlating the angular rate norm of the reference IMU against each secondary IMU and then refined during optimization.
+  </Step>
+
+  <Step title="Review the output">
+    The output files follow the same naming convention as single-IMU calibration:
+
+    | File | Contents |
+    |---|---|
+    | `MYROSBAG-camchain-imucam.yaml` | Camera chain with `T_cam_imu` for the reference IMU |
+    | `MYROSBAG-imu.yaml` | Parameters for all IMUs including `T_i_b` (transformation from body/reference IMU frame to each IMU) and time offsets |
+    | `MYROSBAG-results-imucam.txt` | Full numeric results |
+    | `MYROSBAG-report-imucam.pdf` | Visual report with residuals for all IMUs |
+
+    In the results file, look for the `T_i_b` matrix for each non-reference IMU. This is the transformation from the body (reference IMU) frame to the secondary IMU frame. The time offset for each secondary IMU is also reported in seconds.
+  </Step>
+</Steps>
+
+## Using scale-misalignment models
+
+You can mix IMU models across sensors. For example, to use the detailed `scale-misalignment` model for the reference IMU and `calibrated` for a secondary IMU:
+
+```bash
+kalibr_calibrate_imu_camera \
+  --bag MYROSBAG.bag \
+  --cam camchain.yaml \
+  --imu imu0.yaml imu1.yaml \
+  --imu-models scale-misalignment calibrated \
+  --target aprilgrid.yaml
+```
+
+The number of `--imu-models` entries must equal the number of `--imu` entries.
+
+## Troubleshooting
+
+### "The time ranges of the IMUs do not overlap"
+
+The cross-correlation step requires the reference IMU and secondary IMU time series to overlap. If they do not, the tool exits with a fatal error. Check that both IMU topics are being recorded for the full duration of the bag.
+
+### Secondary IMU orientation prior fails
+
+The orientation prior estimation for a secondary IMU uses angular rate cross-correlation. If the secondary IMU has very different noise characteristics or is nearly collinear with the reference IMU's rotation axes, this step can fail. Try increasing the aggressiveness of the calibration motion to include more pronounced rotations.
+
+<CardGroup cols={2}>
+  <Card title="Camera-IMU calibration" icon="gauge" href="/guides/camera-imu-calibration">
+    Prerequisite guide covering single-IMU calibration and IMU YAML format.
+  </Card>
+  <Card title="IMU noise model" icon="chart-line" href="/concepts/imu-noise-model">
+    How to determine noise density and random walk values for your IMU.
+  </Card>
+</CardGroup>

@@ -1,81 +1,168 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
-icon: 'rocket'
+title: "Get started with Kalibr"
+description: "Run your first end-to-end camera calibration with Kalibr: generate an AprilGrid target, record a ROS bag, run the calibrator, and read the output files."
 ---
 
-## Get started in three steps
-
-Get your documentation site running locally and make your first customization.
-
-### Step 1: Set up your local environment
-
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
+This guide walks you through a complete first calibration using Kalibr. You will generate an AprilGrid calibration target, record a ROS bag with your camera, run `kalibr_calibrate_cameras`, and interpret the output. All commands assume you are working inside the Docker container or a sourced ROS workspace — see the [installation guide](/installation) if you have not set that up yet.
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+  If you are using Docker, start the container and source the workspace before running any Kalibr commands:
+
+  ```bash
+  source /catkin_ws/devel/setup.bash
+  ```
 </Note>
+
+## Before you begin
+
+You need:
+- Kalibr installed (Docker or source build)
+- A camera publishing images on a ROS topic
+- A printer capable of printing at the correct physical scale
+
+---
+
+<Steps>
+  <Step title="Generate a calibration target PDF">
+    Kalibr provides `kalibr_create_target_pdf` to generate print-ready calibration targets. The AprilGrid is the recommended target type — it is robust to partial occlusions because each tag has a unique ID.
+
+    ```bash
+    kalibr_create_target_pdf \
+      --type apriltag \
+      --nx 6 \
+      --ny 6 \
+      --tsize 0.08 \
+      --tspace 0.3
+    ```
+
+    | Flag | Meaning |
+    |---|---|
+    | `--type apriltag` | AprilTag-based grid target |
+    | `--nx 6` | Number of tags along the x axis |
+    | `--ny 6` | Number of tags along the y axis |
+    | `--tsize 0.08` | Physical tag size in metres (here 8 cm) |
+    | `--tspace 0.3` | Tag spacing as a fraction of tag size (30%) |
+
+    This produces a PDF file (`target.pdf`) in the current directory.
+
+    <Warning>
+      Print the PDF at exactly 100% scale — do not scale to fit the page. Measure a tag after printing to confirm it matches the `--tsize` value. Any discrepancy will directly degrade calibration accuracy.
+    </Warning>
+
+    The calibration target configuration used in subsequent steps must match what you passed to `kalibr_create_target_pdf`. Save an `aprilgrid.yaml` file:
+
+    ```yaml
+    target_type: 'aprilgrid'
+    tagCols: 6
+    tagRows: 6
+    tagSize: 0.088   # metres — set this to your actual printed tag size
+    tagSpacing: 0.3  # fraction of tagSize
+    ```
+
+    <Tip>
+      Measure the printed tag size with a ruler and update `tagSize` in the YAML to match. Even a few millimetres of error matters.
+    </Tip>
+  </Step>
+
+  <Step title="Record a ROS bag with camera data">
+    Mount the printed target rigidly (on a flat wall or clipboard) and move the camera in front of it — or hold the target and move it in front of a static camera. You need to cover the full field of view with many different viewing angles.
+
+    Record camera images to a ROS bag:
+
+    ```bash
+    rosbag record -O calibration.bag /cam0/image_raw
+    ```
+
+    Replace `/cam0/image_raw` with the actual topic name your camera publishes on.
+
+    **Tips for a good calibration bag:**
+    - Record at least 60–80 frames where the full target is visible.
+    - Tilt and rotate the camera (or target) significantly — pure planar motion does not constrain all intrinsics.
+    - Include close and far distances to the target.
+    - Keep movements slow and steady to avoid motion blur.
+    - Aim for good, consistent lighting with no glare on the target.
+
+    For a multi-camera rig, record all camera topics simultaneously:
+
+    ```bash
+    rosbag record -O calibration.bag /cam0/image_raw /cam1/image_raw
+    ```
+  </Step>
+
+  <Step title="Run camera calibration">
+    Run `kalibr_calibrate_cameras` with your bag file, target configuration, camera model, and image topic:
+
+    ```bash
+    kalibr_calibrate_cameras \
+      --models pinhole-radtan \
+      --target aprilgrid.yaml \
+      --bag calibration.bag \
+      --topics /cam0/image_raw
+    ```
+
+    For a two-camera rig, specify one model and one topic per camera:
+
+    ```bash
+    kalibr_calibrate_cameras \
+      --models pinhole-radtan pinhole-radtan \
+      --target aprilgrid.yaml \
+      --bag calibration.bag \
+      --topics /cam0/image_raw /cam1/image_raw
+    ```
+
+    **Choosing a camera model:**
+
+    | Model string | When to use |
+    |---|---|
+    | `pinhole-radtan` | Standard lens, moderate field of view |
+    | `pinhole-equi` | Wide-angle or fisheye lens |
+    | `pinhole-fov` | Fisheye lens with field-of-view model |
+    | `omni-radtan` | Omnidirectional camera |
+    | `ds-none` | Double Sphere model (fisheye) |
+
+    <Note>
+      Kalibr selects which images to include based on a mutual-information criterion. It is normal for many frames to be skipped — the tool prints progress and reports how many views were used.
+    </Note>
+  </Step>
+
+  <Step title="Review the output files">
+    When calibration completes, Kalibr writes three output files named after your bag file (for example, `calibration-camchain.yaml`, `calibration-results-cam.txt`, and `calibration-report-cam.pdf`).
+
+    **`calibration-camchain.yaml`** — the primary result file. It contains the intrinsic parameters for each camera and, for multi-camera rigs, the extrinsic transforms between cameras:
+
+    ```yaml
+    cam0:
+      camera_model: pinhole
+      intrinsics: [461.629, 460.152, 362.680, 246.049]  # fx fy cx cy
+      distortion_model: radtan
+      distortion_coeffs: [-0.27695497, 0.06712482, 0.00087538, 0.00011556]
+      resolution: [752, 480]
+      rostopic: /cam0/image_raw
+    ```
+
+    **`calibration-results-cam.txt`** — a detailed text report with reprojection error statistics and optimizer output.
+
+    **`calibration-report-cam.pdf`** — a visual report with reprojection error plots, detected corners, and camera geometry diagrams.
+
+    <Tip>
+      Check the reprojection error in the PDF report. A mean reprojection error below 0.5 pixels indicates a good calibration. Errors above 1 pixel suggest problems with the target size, camera model choice, or image quality.
+    </Tip>
+  </Step>
+</Steps>
+
+## What to do next
+
+<CardGroup cols={2}>
+  <Card title="Camera-IMU calibration" icon="gauge" href="/guides/camera-imu-calibration">
+    Use the `camchain.yaml` output from this step as input to calibrate an IMU against your camera system.
+  </Card>
+  <Card title="Multi-camera calibration guide" icon="camera" href="/guides/multi-camera-calibration">
+    Learn advanced options for calibrating rigs with more than two cameras or non-overlapping fields of view.
+  </Card>
+  <Card title="AprilGrid target reference" icon="grid-2x2" href="/targets/aprilgrid">
+    Full reference for AprilGrid configuration options and printing guidance.
+  </Card>
+  <Card title="Camera models" icon="sliders" href="/concepts/camera-models">
+    Understand the projection and distortion model options available in Kalibr.
+  </Card>
+</CardGroup>

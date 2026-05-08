@@ -1,0 +1,90 @@
+---
+title: "Checkerboard calibration target"
+description: "Configure, generate, and print a checkerboard target for Kalibr. Covers YAML format, PDF generation, and limitations compared to the AprilGrid."
+---
+
+A checkerboard target is a grid of alternating black and white squares. Kalibr detects the inner corner points — the intersections between four squares — and uses them as the observed features for calibration. Checkerboards are widely supported across computer vision tools and are straightforward to print, but they require the full board to be visible in every usable frame and cannot recover partial observations.
+
+<Note>
+  The AprilGrid is recommended for most setups. Consider a checkerboard when you already have a printed board available, when your imaging environment makes AprilTag detection unreliable, or when you need compatibility with other tools that only support checkerboards.
+</Note>
+
+## YAML configuration
+
+Create a YAML file describing the physical layout of your checkerboard. Pass it to any Kalibr command with `--target checkerboard.yaml`.
+
+```yaml
+target_type: 'checkerboard'
+targetCols: 6              # number of internal corners along the x-axis
+targetRows: 7              # number of internal corners along the y-axis
+rowSpacingMeters: 0.06     # physical size of one square in meters (y direction)
+colSpacingMeters: 0.06     # physical size of one square in meters (x direction)
+```
+
+### Field reference
+
+| Field | Type | Description |
+|---|---|---|
+| `target_type` | string | Must be `'checkerboard'` |
+| `targetCols` | int | Number of internal corners along the x-axis (minimum 3) |
+| `targetRows` | int | Number of internal corners along the y-axis (minimum 3) |
+| `rowSpacingMeters` | float | Size of one square in the y direction, in meters |
+| `colSpacingMeters` | float | Size of one square in the x direction, in meters |
+
+<Warning>
+  `targetCols` and `targetRows` count **internal corners**, not squares and not the outer border. A board with 7 columns of squares has 6 internal corners along that axis. Count carefully — an off-by-one error here will cause detection to fail.
+</Warning>
+
+## Generating the PDF
+
+Use `kalibr_create_target_pdf` to produce a print-ready PDF:
+
+```bash
+kalibr_create_target_pdf --type checkerboard --nx 6 --ny 7 --csx 0.05 --csy 0.05
+```
+
+This writes a `target.pdf` file in the current directory. The arguments correspond to the YAML fields:
+
+| CLI flag | YAML field | Description |
+|---|---|---|
+| `--nx` | `targetCols` | Internal corners horizontally |
+| `--ny` | `targetRows` | Internal corners vertically |
+| `--csx` | `colSpacingMeters` | Square size in x, in meters |
+| `--csy` | `rowSpacingMeters` | Square size in y, in meters |
+
+To also produce an EPS vector file, add `--eps`:
+
+```bash
+kalibr_create_target_pdf --type checkerboard --nx 6 --ny 7 --csx 0.05 --csy 0.05 --eps
+```
+
+See [kalibr_create_target_pdf](/reference/kalibr-create-target-pdf) for the complete flag reference.
+
+## Printing and mounting
+
+<Steps>
+  <Step title="Print at 100% scale">
+    Open the PDF and disable any fit-to-page or scaling option in your printer dialog. Print at exactly 100% so the square dimensions in the PDF correspond to real-world measurements.
+  </Step>
+  <Step title="Mount on a rigid surface">
+    Glue or tape the printout to a flat, rigid backing — aluminum composite panel, thick foam board, or similar. Warping in the board will introduce systematic errors because the internal corners will no longer be coplanar.
+  </Step>
+  <Step title="Measure and update the YAML">
+    Use a ruler or calipers to measure the physical side length of one printed square. Update `rowSpacingMeters` and `colSpacingMeters` in your YAML file to the measured values. Do not use the nominal value from the PDF generation command.
+  </Step>
+</Steps>
+
+## Limitations compared to AprilGrid
+
+| | Checkerboard | AprilGrid |
+|---|---|---|
+| Each detected feature is uniquely identified | No | Yes |
+| Works with partial occlusion | No — full board required | Yes |
+| Sensitive to lighting and contrast | More sensitive | Less sensitive |
+| Detection fails if board rotated out of frame | Yes | Partial views accepted |
+
+Because checkerboard corners have no individual identity, the detector must see the entire board in a single frame to establish the correspondence between image detections and known 3D positions. If the board moves partially out of view, or if the outer border is obscured, that frame cannot be used.
+
+<Tip>
+  When collecting calibration data with a checkerboard, move slowly and keep the entire board within the camera frame at all times. Vary the board's distance, tilt, and position across the image to excite all calibration parameters.
+</Tip>

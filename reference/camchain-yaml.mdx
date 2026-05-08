@@ -1,0 +1,163 @@
+---
+title: "camchain.yaml — camera chain calibration format"
+description: "Reference for the camchain.yaml file produced by camera calibration and consumed by camera-IMU calibration, covering every field and model variant."
+---
+
+The `camchain.yaml` file is the primary output of `kalibr_calibrate_cameras` and the primary input to `kalibr_calibrate_imu_camera`. It describes one or more cameras as a chain: `cam0` is always the reference camera, and each subsequent camera (`cam1`, `cam2`, …) records its pose relative to the previous one via `T_cn_cnm1`. After camera-IMU calibration, each camera entry is extended with `T_cam_imu` and `timeshift_cam_imu`.
+
+## Complete example
+
+The following shows a two-camera stereo rig after camera-IMU calibration:
+
+```yaml
+cam0:
+  camera_model: pinhole
+  intrinsics: [461.629, 460.152, 362.680, 246.049]
+  distortion_model: equidistant
+  distortion_coeffs: [-0.01316, 0.05008, -0.04506, 0.01241]
+  resolution: [752, 480]
+  rostopic: /cam0/image_raw
+  T_cam_imu:
+  - [ 0.01779,  0.99967,  0.01822, -0.01690]
+  - [-0.99967,  0.01778,  0.01827,  0.06546]
+  - [ 0.01796, -0.01854,  0.99967, -0.02e-3]
+  - [ 0.00000,  0.00000,  0.00000,  1.00000]
+  timeshift_cam_imu: -8.0e-05
+  cam_overlaps: [1]
+
+cam1:
+  camera_model: pinhole
+  intrinsics: [458.655, 457.296, 367.215, 248.375]
+  distortion_model: equidistant
+  distortion_coeffs: [-0.01353, 0.05274, -0.04979, 0.01355]
+  resolution: [752, 480]
+  rostopic: /cam1/image_raw
+  T_cn_cnm1:
+  - [ 0.99998,  0.00226,  0.00520, -0.11016]
+  - [-0.00225,  0.99999, -0.00373,  0.00007]
+  - [-0.00521,  0.00372,  0.99998,  0.00025]
+  - [ 0.00000,  0.00000,  0.00000,  1.00000]
+  T_cam_imu:
+  - [ 0.01720,  0.99967,  0.01872, -0.12705]
+  - [-0.99968,  0.01719,  0.01879,  0.06587]
+  - [ 0.01847, -0.01903,  0.99965, -0.01857]
+  - [ 0.00000,  0.00000,  0.00000,  1.00000]
+  timeshift_cam_imu: -8.0e-05
+  cam_overlaps: [0]
+```
+
+## Field reference
+
+Each `camN` entry contains the following fields.
+
+### Intrinsics and projection
+
+<ResponseField name="camera_model" type="string" required>
+  Projection model for this camera. One of:
+
+  - `pinhole` — standard perspective camera; `intrinsics` is `[fu, fv, pu, pv]`
+  - `omni` — omnidirectional (Mei model); `intrinsics` is `[xi, fu, fv, pu, pv]`
+  - `eucm` — Extended Unified Camera Model; `intrinsics` is `[alpha, beta, fu, fv, pu, pv]`
+  - `ds` — Double Sphere model; `intrinsics` is `[xi, alpha, fu, fv, pu, pv]`
+
+  See [Camera models](/concepts/camera-models) for the mathematics behind each model.
+</ResponseField>
+
+<ResponseField name="intrinsics" type="number[]" required>
+  Intrinsic parameter array. Layout depends on `camera_model`:
+
+  | Model | Layout | Length |
+  |-------|--------|--------|
+  | `pinhole` | `[fu, fv, pu, pv]` | 4 |
+  | `omni` | `[xi, fu, fv, pu, pv]` | 5 |
+  | `eucm` | `[alpha, beta, fu, fv, pu, pv]` | 6 |
+  | `ds` | `[xi, alpha, fu, fv, pu, pv]` | 6 |
+
+  `fu` and `fv` are focal lengths in pixels; `pu` and `pv` are the principal point. For `omni`, `xi >= 0`. For `ds`, `0 <= alpha < 1`. For `eucm`, `0 <= alpha < 1` and `beta >= 0`.
+</ResponseField>
+
+<ResponseField name="distortion_model" type="string" required>
+  Lens distortion model. One of:
+
+  - `radtan` — radial-tangential (Brown–Conrady); 4 coefficients `[k1, k2, r1, r2]`
+  - `equidistant` — fisheye equidistant (Kannala–Brandt); 4 coefficients `[k1, k2, k3, k4]`
+  - `fov` — field-of-view model; 1 coefficient `[w]`
+  - `none` — no distortion; 0 coefficients
+
+  `eucm` and `ds` models only support `none`. `omni` only supports `radtan` and `none`.
+</ResponseField>
+
+<ResponseField name="distortion_coeffs" type="number[]" required>
+  Distortion coefficients matching the selected `distortion_model`. Use an empty list `[]` when `distortion_model` is `none`.
+</ResponseField>
+
+<ResponseField name="resolution" type="integer[]" required>
+  Image resolution as `[width, height]` in pixels. Both values must be positive integers.
+</ResponseField>
+
+### Data source
+
+<ResponseField name="rostopic" type="string" required>
+  ROS image topic for this camera (e.g. `/cam0/image_raw`). Kalibr reads images from this topic when processing bag files.
+</ResponseField>
+
+### Inter-camera extrinsics
+
+<ResponseField name="T_cn_cnm1" type="number[][]">
+  4×4 homogeneous transformation matrix expressing the pose of this camera (`cn`) in the coordinate frame of the previous camera (`cn-1`). Absent for `cam0`, which is the chain reference. Written after camera-only calibration.
+
+  ```yaml
+  T_cn_cnm1:
+  - [ 0.99998,  0.00226,  0.00520, -0.11016]
+  - [-0.00225,  0.99999, -0.00373,  0.00007]
+  - [-0.00521,  0.00372,  0.99998,  0.00025]
+  - [ 0.00000,  0.00000,  0.00000,  1.00000]
+  ```
+</ResponseField>
+
+<ResponseField name="cam_overlaps" type="integer[]">
+  List of camera indices whose field of view overlaps with this camera. Used by the calibrator to determine which camera pairs share target observations. Written automatically after camera calibration.
+</ResponseField>
+
+### IMU extrinsics (added by camera-IMU calibration)
+
+<ResponseField name="T_cam_imu" type="number[][]">
+  4×4 homogeneous transformation matrix expressing the pose of `imu0` in the camera coordinate frame (transforms points from the IMU frame into the camera frame). Written after `kalibr_calibrate_imu_camera`.
+
+  ```yaml
+  T_cam_imu:
+  - [ 0.01779,  0.99967,  0.01822, -0.01690]
+  - [-0.99967,  0.01778,  0.01827,  0.06546]
+  - [ 0.01796, -0.01854,  0.99967, -0.00002]
+  - [ 0.00000,  0.00000,  0.00000,  1.00000]
+  ```
+</ResponseField>
+
+<ResponseField name="timeshift_cam_imu" type="number">
+  Time offset in seconds such that `t_imu = t_cam + timeshift_cam_imu`. A negative value means camera timestamps are ahead of IMU timestamps. Written after `kalibr_calibrate_imu_camera`.
+</ResponseField>
+
+## Model combinations
+
+Not all `camera_model` / `distortion_model` pairs are valid. The table below shows supported combinations:
+
+| camera_model | Supported distortion_model |
+|---|---|
+| `pinhole` | `radtan`, `equidistant`, `fov`, `none` |
+| `omni` | `radtan`, `none` |
+| `eucm` | `none` |
+| `ds` | `none` |
+
+## Using this file
+
+Pass the camchain to camera-IMU calibration with `--cams`:
+
+```bash
+kalibr_calibrate_imu_camera \
+  --bag recording.bag \
+  --cams recording-camchain.yaml \
+  --imu imu.yaml \
+  --target aprilgrid.yaml
+```
+
+The output of camera-IMU calibration is written to a new file named `<bagtag>-camchain-imucam.yaml`, leaving the original `camchain.yaml` unchanged. See [Output files](/reference/output-files) for full naming conventions.

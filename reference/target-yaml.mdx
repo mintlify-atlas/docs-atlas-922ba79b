@@ -1,0 +1,125 @@
+---
+title: "target.yaml — calibration target configuration"
+description: "Reference for the target.yaml file describing the calibration target geometry for all Kalibr tools, covering AprilGrid and checkerboard target formats."
+---
+
+Every Kalibr calibration command requires a `--target` YAML file that describes the physical calibration target. Kalibr uses this geometry to establish 3D-to-2D correspondences between known target points and their detected image locations. Getting the dimensions exactly right is critical: errors in the physical measurements translate directly into intrinsic and extrinsic calibration errors.
+
+<Warning>
+  Always measure the printed target with a ruler or caliper. Printer scaling, paper size mismatches, and PDF-to-paper margins can all introduce systematic errors if you use the nominal design values without verification.
+</Warning>
+
+## Target types
+
+Kalibr supports three target types. AprilGrid is strongly recommended for most use cases.
+
+<Tabs>
+  <Tab title="AprilGrid">
+    The AprilGrid target is the default and recommended choice. Each tag has a unique ID that allows unambiguous detection even with partial occlusion and wide baselines. Kalibr can detect an AprilGrid even when fewer than half of the tags are visible.
+
+    ```yaml
+    target_type: 'aprilgrid'
+    tagCols:     6
+    tagRows:     6
+    tagSize:     0.088   # meters — measure from the printed target
+    tagSpacing:  0.3     # fraction of tagSize (gap / tagSize)
+    ```
+
+    ### Field reference
+
+    <ResponseField name="target_type" type="string" required>
+      Must be `'aprilgrid'`.
+    </ResponseField>
+
+    <ResponseField name="tagCols" type="integer" required>
+      Number of AprilTag columns in the grid. Must be an integer ≥ 3.
+    </ResponseField>
+
+    <ResponseField name="tagRows" type="integer" required>
+      Number of AprilTag rows in the grid. Must be an integer ≥ 3.
+    </ResponseField>
+
+    <ResponseField name="tagSize" type="number" required>
+      Side length of a single AprilTag in meters, measured from the outer edge of the black border of one tag to the outer edge of the black border on the opposite side. Measure this value from the physical printout.
+    </ResponseField>
+
+    <ResponseField name="tagSpacing" type="number" required>
+      Gap between adjacent tags expressed as a fraction of `tagSize`. For example, `0.3` means the gap between tags is `0.3 × tagSize` meters. Must be a positive float. Measure this value from the physical printout and compute `gap_m / tagSize_m`.
+    </ResponseField>
+
+    ### Generating an AprilGrid PDF
+
+    Use the bundled tool to generate a printable target:
+
+    ```bash
+    kalibr_create_target_pdf \
+      --type apriltag \
+      --nx 6 --ny 6 \
+      --tsize 0.088 \
+      --tspace 0.3
+    ```
+
+    See [kalibr_create_target_pdf](/reference/kalibr-create-target-pdf) for all options.
+  </Tab>
+
+  <Tab title="Checkerboard">
+    The standard checkerboard target. Detection is fast and does not require a tag dictionary, but it is more sensitive to partial occlusion than an AprilGrid because the corner detector requires a complete board view.
+
+    ```yaml
+    target_type: 'checkerboard'
+    targetCols:        6
+    targetRows:        7
+    rowSpacingMeters:  0.06
+    colSpacingMeters:  0.06
+    ```
+
+    <Note>
+      `targetCols` and `targetRows` count the number of inner corners (intersections), not the number of squares. A 7×8 square board has 6×7 inner corners.
+    </Note>
+
+    ### Field reference
+
+    <ResponseField name="target_type" type="string" required>
+      Must be `'checkerboard'`.
+    </ResponseField>
+
+    <ResponseField name="targetCols" type="integer" required>
+      Number of inner corner columns. Must be an integer ≥ 3.
+    </ResponseField>
+
+    <ResponseField name="targetRows" type="integer" required>
+      Number of inner corner rows. Must be an integer ≥ 3.
+    </ResponseField>
+
+    <ResponseField name="rowSpacingMeters" type="number" required>
+      Distance between adjacent inner corners along the row direction, in meters. Measure from the printed target.
+    </ResponseField>
+
+    <ResponseField name="colSpacingMeters" type="number" required>
+      Distance between adjacent inner corners along the column direction, in meters. Measure from the printed target.
+    </ResponseField>
+
+    ### Generating a checkerboard PDF
+
+    ```bash
+    kalibr_create_target_pdf \
+      --type checkerboard \
+      --nx 6 --ny 7 \
+      --csx 0.06 --csy 0.06
+    ```
+  </Tab>
+</Tabs>
+
+## Circlegrid target (advanced)
+
+Kalibr also parses a `circlegrid` target type in its configuration reader. The fields are `targetRows`, `targetCols`, `spacingMeters`, and `asymmetricGrid`. This target type is not supported by `kalibr_create_target_pdf` and is rarely used in practice — the AprilGrid is strongly preferred.
+
+## Mounting recommendations
+
+Attach the printed target to a rigid, flat backing such as aluminium composite panel or foam board. Any warping or surface irregularity introduces 3D point errors that appear in the calibration as residual reprojection error. For small targets (< 20 cm), even slight paper curl can measurably degrade results.
+
+## Related pages
+
+- [AprilGrid target details](/targets/aprilgrid)
+- [Checkerboard target details](/targets/checkerboard)
+- [kalibr_create_target_pdf](/reference/kalibr-create-target-pdf)

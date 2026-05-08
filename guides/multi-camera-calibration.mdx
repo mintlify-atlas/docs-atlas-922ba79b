@@ -1,0 +1,167 @@
+---
+title: "Multi-camera intrinsic and extrinsic calibration"
+description: "Calibrate intrinsics and extrinsic transforms for every camera in a rig using kalibr_calibrate_cameras and a printed AprilGrid target."
+---
+
+`kalibr_calibrate_cameras` estimates the intrinsic parameters (focal length, principal point, distortion coefficients) for each camera in your rig simultaneously with the extrinsic transformations between them. The result is a camera chain description that other Kalibr tools and downstream pipelines can consume directly.
+
+<Info>
+  This guide covers camera-only calibration. If you also need to calibrate an IMU, run this step first and use the output `camchain.yaml` as input to [camera-IMU calibration](/guides/camera-imu-calibration).
+</Info>
+
+## Prerequisites
+
+- A ROS bag containing image topics from each camera, recorded while moving an AprilGrid target in front of the rig
+- An `aprilgrid.yaml` target configuration file — see [AprilGrid target reference](/targets/aprilgrid)
+- One camera model selected per camera — see [camera models reference](/concepts/camera-models)
+
+## Available camera models
+
+| Model | Projection | Distortion | Typical use |
+|---|---|---|---|
+| `pinhole-radtan` | Pinhole | Radial-tangential | Standard wide-angle lenses |
+| `pinhole-equi` | Pinhole | Equidistant (fisheye) | Fisheye lenses up to ~180° |
+| `pinhole-fov` | Pinhole | FOV | Wide-angle with single parameter |
+| `omni-none` | Omnidirectional | None | Catadioptric / fisheye, no distortion |
+| `omni-radtan` | Omnidirectional | Radial-tangential | Catadioptric and fisheye lenses |
+| `eucm-none` | Extended unified | None | Very wide FOV cameras |
+| `ds-none` | Double sphere | None | Cameras up to 195° FOV |
+
+Choose the model that matches each physical lens. Using a model that is too simple for the lens will leave systematic residuals; using one that is too complex may overfit on sparse data.
+
+## Step-by-step calibration
+
+<Steps>
+  <Step title="Record a calibration bag">
+    Move the AprilGrid target (or the camera rig) through a wide variety of positions and orientations. Cover all parts of the image, including the corners. Aim for:
+
+    - At least several hundred frames per camera where the target is fully visible
+    - Slow, smooth motion to avoid motion blur
+    - Sufficient overlap between adjacent cameras so the graph stays connected
+
+    <Tip>
+      Tilting the target at different angles (not just face-on) significantly improves estimation of distortion parameters.
+    </Tip>
+  </Step>
+
+  <Step title="Prepare the target YAML">
+    Create `aprilgrid.yaml` to describe your printed target:
+
+    ```yaml aprilgrid.yaml
+    target_type: 'aprilgrid'
+    tagCols: 6
+    tagRows: 6
+    tagSize: 0.088    # meters — measure the printed tag side length
+    tagSpacing: 0.3   # fraction of tagSize between tag edges
+    ```
+
+    Measure `tagSize` on your actual printout. A 1 % error in tag size produces a proportional error in the recovered baseline.
+  </Step>
+
+  <Step title="Run the calibrator">
+    Provide one `--model` entry per camera topic in the same order:
+
+    ```bash
+    kalibr_calibrate_cameras \
+      --models omni-radtan pinhole-equi \
+      --target aprilgrid.yaml \
+      --bag MYROSBAG.bag \
+      --topics /cam0/image_raw /cam1/image_raw
+    ```
+
+    The tool initializes intrinsics from homographies, builds a multi-camera observation graph, and runs a nonlinear batch optimization. Progress and intermediate parameter estimates are printed to the terminal.
+
+    <Note>
+      The number of `--models` entries must equal the number of `--topics` entries. The tool exits with an error if they do not match.
+    </Note>
+  </Step>
+
+  <Step title="Inspect the output files">
+    Three files are written next to the input bag (using the bag filename as prefix):
+
+    | File | Contents |
+    |---|---|
+    | `MYROSBAG-camchain.yaml` | Camera chain calibration (intrinsics + extrinsics for each camera) |
+    | `MYROSBAG-results-cam.txt` | Detailed numeric results including reprojection error statistics |
+    | `MYROSBAG-report-cam.pdf` | Visual report with reprojection error plots and corner observations |
+
+    Open the PDF report and check that the reprojection errors are small (typically under 0.5 px for a well-calibrated system) and evenly distributed across the image plane.
+  </Step>
+</Steps>
+
+## Additional options
+
+### Restricting the time range
+
+Use `--bag-from-to` to process only a portion of the bag:
+
+```bash
+kalibr_calibrate_cameras \
+  --models pinhole-radtan \
+  --target aprilgrid.yaml \
+  --bag MYROSBAG.bag \
+  --topics /cam0/image_raw \
+  --bag-from-to 5.0 60.0
+```
+
+### Controlling frame rate
+
+`--bag-freq` subsamples the bag at the given rate (Hz), which speeds up processing for high-frequency camera streams:
+
+```bash
+kalibr_calibrate_cameras \
+  --models pinhole-radtan \
+  --target aprilgrid.yaml \
+  --bag MYROSBAG.bag \
+  --topics /cam0/image_raw \
+  --bag-freq 4.0
+```
+
+### Approximate synchronization tolerance
+
+For camera rigs without hardware synchronization, `--approx-sync` sets the maximum time difference (seconds) between images from different cameras that will be treated as a synchronized frame. The default is 0.02 s:
+
+```bash
+  --approx-sync 0.05
+```
+
+### Exporting optimized poses
+
+`--export-poses` writes a CSV file with the optimized target-to-camera poses for each accepted frame, which can be used for external analysis:
+
+```bash
+  --export-poses
+```
+
+## Troubleshooting
+
+### "Cameras are not connected through mutual observations"
+
+The calibration graph requires every camera to share at least some frames in which both cameras observe the target simultaneously. This error means the graph is disconnected — one or more cameras never co-observe with the rest of the chain.
+
+**Fix**: Ensure the target is visible in all cameras at the same time during a portion of the recording. Widen the target, bring it closer, or adjust the camera pointing directions so that fields of view overlap.
+
+### Optimization diverges repeatedly
+
+The tool automatically restarts up to three times with fresh intrinsic initialization when the optimizer diverges. If it still fails:
+
+- Check that the selected model fits the lens. An omnidirectional model applied to a narrow-FOV pinhole lens, for example, is poorly conditioned.
+- Use `--show-extraction` to verify that the target is being detected correctly in the images.
+- Use `--verbose` to inspect initialization values.
+
+### Poor reprojection errors
+
+High reprojection errors or a biased spatial distribution of residuals in the PDF report usually indicate one of:
+
+- A mismatch between the chosen camera model and the actual lens
+- Inaccurate `tagSize` measurement
+- Motion blur or poor target detection in a significant fraction of frames
+
+<CardGroup cols={2}>
+  <Card title="Camera models" icon="camera" href="/concepts/camera-models">
+    Detailed explanation of all supported projection and distortion models.
+  </Card>
+  <Card title="AprilGrid target" icon="grid-2x2" href="/targets/aprilgrid">
+    How to print and configure the AprilGrid calibration target.
+  </Card>
+</CardGroup>

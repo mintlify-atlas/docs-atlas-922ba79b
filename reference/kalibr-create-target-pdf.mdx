@@ -1,0 +1,163 @@
+---
+title: "kalibr_create_target_pdf — generate calibration target PDFs"
+description: "Generate print-ready PDF (and optional EPS) files for AprilGrid and checkerboard calibration targets with configurable grid dimensions and tag families."
+---
+
+`kalibr_create_target_pdf` renders a calibration target — either an AprilGrid or a checkerboard — to a PDF file that you can print at the correct physical scale. The output dimensions are defined by the tag or square size arguments in meters, which the tool converts to the PDF coordinate system automatically.
+
+Print the resulting PDF at 100% scale (no scaling, no fit-to-page) and measure the physical tag or square size with calipers to verify it matches the value you passed to the tool.
+
+## Synopsis
+
+```bash
+kalibr_create_target_pdf [output] --type <apriltag|checkerboard> [options]
+```
+
+## Examples
+
+<Tabs>
+  <Tab title="AprilGrid">
+    ```bash
+    kalibr_create_target_pdf --type apriltag \
+                             --nx 6 --ny 6 \
+                             --tsize 0.08 \
+                             --tspace 0.3
+    ```
+
+    This generates `target.pdf` with a 6×6 AprilGrid using the default `t36h11` family, with 8 cm tags and 30% inter-tag spacing.
+
+    To use a different output name and tag family:
+
+    ```bash
+    kalibr_create_target_pdf aprilgrid_t25h9 \
+                             --type apriltag \
+                             --nx 6 --ny 7 \
+                             --tsize 0.06 \
+                             --tspace 0.3 \
+                             --tfam t25h9
+    ```
+  </Tab>
+  <Tab title="Checkerboard">
+    ```bash
+    kalibr_create_target_pdf --type checkerboard \
+                             --nx 6 --ny 6 \
+                             --csx 0.05 --csy 0.1
+    ```
+
+    This generates `target.pdf` with a 6×6 checkerboard with 5 cm × 10 cm squares.
+
+    To also produce an EPS file alongside the PDF:
+
+    ```bash
+    kalibr_create_target_pdf my_checker --type checkerboard \
+                             --nx 8 --ny 6 \
+                             --csx 0.05 --csy 0.05 \
+                             --eps
+    ```
+  </Tab>
+</Tabs>
+
+## Flags
+
+### Output options
+
+<ParamField query="output" type="string">
+  Output filename without extension. The tool appends `.pdf` (and `.eps` when `--eps` is given). Default: `target`.
+</ParamField>
+
+<ParamField query="--eps" type="boolean">
+  Also write an EPS file alongside the PDF.
+</ParamField>
+
+### Generic grid options
+
+<ParamField query="--type" type="string">
+  Grid pattern type. Accepted values: `apriltag`, `checkerboard`.
+</ParamField>
+
+<ParamField query="--nx" type="integer">
+  Number of tags or squares in the x direction (columns). Default: `6`.
+</ParamField>
+
+<ParamField query="--ny" type="integer">
+  Number of tags or squares in the y direction (rows). Default: `7`.
+</ParamField>
+
+### AprilGrid options
+
+The following flags apply only when `--type apriltag` is set.
+
+<ParamField query="--tsize" type="float">
+  Size of one AprilTag in meters. Default: `0.08`.
+</ParamField>
+
+<ParamField query="--tspace" type="float">
+  Spacing between adjacent tags as a fraction of the tag edge size, in the range `[0, 1]`. Default: `0.3`.
+</ParamField>
+
+<ParamField query="--tfam" type="string">
+  AprilTag family. Accepted values: `t16h5`, `t25h7`, `t25h9`, `t36h11`. Default: `t36h11`.
+
+  `t36h11` provides the best detection reliability and is the recommended family for Kalibr.
+</ParamField>
+
+<ParamField query="--skip-ids" type="string">
+  Space-separated list of tag IDs to leave blank in the grid. Useful when specific tags are damaged or known to be problematic. Default: none.
+</ParamField>
+
+### Checkerboard options
+
+The following flags apply only when `--type checkerboard` is set.
+
+<ParamField query="--csx" type="float">
+  Width of one checkerboard square in the x direction, in meters. Default: `0.05`.
+</ParamField>
+
+<ParamField query="--csy" type="float">
+  Height of one checkerboard square in the y direction, in meters. Default: `0.05`.
+</ParamField>
+
+## Tag families
+
+| Family | Bits | Max tags | Reliability |
+|---|---|---|---|
+| `t16h5` | 16 | 30 | Lower (more false positives) |
+| `t25h7` | 25 | 242 | Moderate |
+| `t25h9` | 25 | 35 | Moderate |
+| `t36h11` | 36 | 587 | Highest (recommended) |
+
+<Note>
+  The `t36h9` family is defined in the source code but commented out and not available at runtime. Use `t36h11` instead.
+</Note>
+
+## Generating a YAML target configuration
+
+After printing, create a YAML configuration file that matches the physical parameters you used. Pass this file to `--target` in all Kalibr calibration tools.
+
+<Tabs>
+  <Tab title="AprilGrid YAML">
+    ```yaml
+    target_type: 'aprilgrid'
+    tagCols: 6
+    tagRows: 6
+    tagSize: 0.08      # meters — measure after printing
+    tagSpacing: 0.3    # same fraction used with --tspace
+    ```
+  </Tab>
+  <Tab title="Checkerboard YAML">
+    ```yaml
+    target_type: 'checkerboard'
+    targetCols: 6
+    targetRows: 6
+    rowSpacingMeters: 0.05
+    colSpacingMeters: 0.05
+    ```
+  </Tab>
+</Tabs>
+
+## Related pages
+
+- [Calibration targets overview](/targets/overview)
+- [AprilGrid target](/targets/aprilgrid)
+- [Checkerboard target](/targets/checkerboard)
+- [Target YAML format](/reference/target-yaml)

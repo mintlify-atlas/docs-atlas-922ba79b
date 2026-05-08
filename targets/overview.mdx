@@ -1,0 +1,68 @@
+---
+title: "Calibration targets for Kalibr"
+description: "Kalibr supports AprilGrid and checkerboard targets. Choose the right type for your setup and learn how to print and configure each one."
+---
+
+Every Kalibr calibration run requires a physical target that the camera can observe from multiple poses. The target gives the calibration solver a set of known 3D points to match against image detections. Kalibr supports two target types: the AprilGrid and the classic checkerboard. Both are configured through a small YAML file passed to calibration commands via the `--target` flag.
+
+## Target types
+
+<CardGroup cols={2}>
+  <Card title="AprilGrid" icon="grid" href="/targets/aprilgrid">
+    A grid of AprilTag fiducial markers with spacing between them. Each tag carries a unique ID, so the detector never confuses one tag for another and can work with partial occlusion.
+  </Card>
+  <Card title="Checkerboard" icon="border-all" href="/targets/checkerboard">
+    A standard black-and-white checkerboard pattern. Corner detection is well-understood and works with many existing tools, but the entire board must be visible in each frame.
+  </Card>
+</CardGroup>
+
+## Comparison
+
+| | AprilGrid | Checkerboard |
+|---|---|---|
+| Each feature is uniquely identified | Yes — every tag has an ID | No — corners are interchangeable |
+| Works with partial occlusion | Yes | No — full board must be visible |
+| Detection robustness | High | Moderate |
+| Recommended for Kalibr | Yes | Acceptable fallback |
+
+<Tip>
+  Use the AprilGrid for all new setups. Its unique tag IDs allow the detector to recover partial observations — for example when part of the target leaves the field of view — which leads to more data and more reliable calibration.
+</Tip>
+
+## YAML configuration
+
+Both target types share the same `target_type` key. Pass the YAML file to any Kalibr command with `--target <file>`:
+
+```bash
+kalibr_calibrate_cameras --target aprilgrid.yaml --models pinhole-radtan --bag data.bag --topics /cam0/image_raw
+```
+
+The YAML structure differs per target type. See the individual target pages for the exact fields:
+
+- [AprilGrid configuration](/targets/aprilgrid)
+- [Checkerboard configuration](/targets/checkerboard)
+
+For a complete field-by-field reference, see [target YAML reference](/reference/target-yaml).
+
+## Printing targets
+
+Calibration accuracy depends directly on the physical accuracy of the printed target. Follow these guidelines for both target types:
+
+<Steps>
+  <Step title="Generate the PDF">
+    Use `kalibr_create_target_pdf` to produce a correctly proportioned PDF. Specify the exact dimensions you intend to use — the YAML configuration must match the physical measurements of the printed target. See [kalibr_create_target_pdf](/reference/kalibr-create-target-pdf) for all options.
+  </Step>
+  <Step title="Print at 100% scale">
+    Disable any page scaling or fit-to-page options in your printer dialog. Print at exactly 100% so the dimensions in the PDF correspond to real-world measurements.
+  </Step>
+  <Step title="Mount on a rigid flat surface">
+    Glue or tape the printout to a rigid, flat backing such as a sheet of aluminum composite, foam board, or thick cardboard. Any warping or bending in the target will introduce systematic errors in the calibration.
+  </Step>
+  <Step title="Measure the actual tag or square size">
+    After printing, measure the physical size of one tag or one square with calipers. Use this measured value — not the value you specified when generating the PDF — in your YAML configuration file.
+  </Step>
+</Steps>
+
+<Warning>
+  The `tagSize` or `rowSpacingMeters`/`colSpacingMeters` fields in your YAML must reflect the physically measured size of the printed target, not the nominal value used to generate the PDF. Printer scaling and paper shrinkage can introduce discrepancies of several percent.
+</Warning>

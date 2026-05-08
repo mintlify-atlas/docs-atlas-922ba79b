@@ -1,0 +1,95 @@
+---
+title: "About Kalibr: calibration for multi-sensor rigs"
+description: "Kalibr is an open-source ROS toolbox for multi-camera, camera-IMU, multi-IMU, and rolling shutter camera calibration, built on continuous-time batch estimation."
+---
+
+Kalibr is a calibration toolbox developed at ETH Zurich's Autonomous Systems Lab. It addresses the hardest calibration problems in robotics and computer vision: accurately recovering the intrinsic parameters of cameras, the spatial transforms between sensors, and — critically — the time offsets between sensors running at different rates. All calibration routines are built on continuous-time batch estimation over ROS bag recordings, making them robust to noisy data and sensor asynchrony.
+
+## What Kalibr calibrates
+
+Kalibr solves four distinct calibration problems, each with a dedicated CLI tool:
+
+<CardGroup cols={2}>
+  <Card title="Multi-camera calibration" icon="camera" href="/guides/multi-camera-calibration">
+    Intrinsic and extrinsic calibration of camera systems with non-globally overlapping fields of view. Supports a wide range of projection and distortion models.
+  </Card>
+  <Card title="Camera-IMU calibration" icon="gauge" href="/guides/camera-imu-calibration">
+    Spatial and temporal calibration of an IMU with respect to a camera chain, including IMU intrinsic parameter estimation.
+  </Card>
+  <Card title="Multi-IMU calibration" icon="microchip" href="/guides/multi-imu-calibration">
+    Spatial and temporal calibration of multiple IMUs relative to a base inertial sensor, using one aiding camera.
+  </Card>
+  <Card title="Rolling shutter calibration" icon="film" href="/guides/rolling-shutter-calibration">
+    Full intrinsic calibration of rolling shutter cameras, including projection, distortion, and readout time parameters.
+  </Card>
+</CardGroup>
+
+## Supported platforms
+
+Kalibr runs on ROS 1 and is tested on the following Ubuntu releases:
+
+| Ubuntu version | ROS distribution | Dockerfile |
+|---|---|---|
+| 20.04 (Focal) | ROS Noetic | `Dockerfile_ros1_20_04` |
+| 18.04 (Bionic) | ROS Melodic | `Dockerfile_ros1_18_04` |
+| 16.04 (Xenial) | ROS Kinetic | `Dockerfile_ros1_16_04` |
+
+<Note>
+  Ubuntu 20.04 with ROS Noetic is the recommended platform. It uses Python 3 throughout and receives active CI coverage.
+</Note>
+
+## Academic background
+
+Kalibr's calibration algorithms are grounded in peer-reviewed research. If you use Kalibr in academic work, cite the papers relevant to the calibration type you used.
+
+### Camera-IMU and multi-IMU calibration
+
+**Extending Kalibr: Calibrating the extrinsics of multiple IMUs and of individual axes.**
+Joern Rehder, Janosch Nikolic, Thomas Schneider, Timo Hinzmann, Roland Siegwart.
+*ICRA 2016*, pp. 4304–4311, Stockholm, Sweden.
+
+**Unified Temporal and Spatial Calibration for Multi-Sensor Systems.**
+Paul Furgale, Joern Rehder, Roland Siegwart.
+*IROS 2013*, Tokyo, Japan.
+
+### Continuous-time estimation
+
+**Continuous-Time Batch Estimation Using Temporal Basis Functions.**
+Paul Furgale, T D Barfoot, G Sibley.
+*ICRA 2012*, pp. 2088–2095, St. Paul, MN.
+
+### Self-supervised calibration
+
+**Self-supervised Calibration for Robotic Systems.**
+J. Maye, P. Furgale, R. Siegwart.
+*IEEE Intelligent Vehicles Symposium (IVS) 2013*.
+
+### Rolling shutter calibration
+
+**Rolling Shutter Camera Calibration.**
+L. Oth, P. Furgale, L. Kneip, R. Siegwart.
+*CVPR 2013*.
+
+## Authors
+
+Kalibr was created and maintained by researchers at the Autonomous Systems Lab, ETH Zurich:
+
+- Paul Furgale
+- Hannes Sommer
+- Jérôme Maye
+- Jörn Rehder
+- Thomas Schneider
+- Luc Oth
+
+This work was supported in part by the European Union's Seventh Framework Programme (FP7/2007–2013) under grants #269916 (V-Charge) and #610603 (EUROPA2).
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Install Kalibr" icon="download" href="/installation">
+    Set up Kalibr with Docker (recommended) or build from source in a ROS catkin workspace.
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Run your first camera calibration end-to-end with an AprilGrid target and a ROS bag.
+  </Card>
+</CardGroup>

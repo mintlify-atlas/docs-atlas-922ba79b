@@ -1,0 +1,228 @@
+---
+title: "Installing Kalibr via Docker or from source"
+description: "Install Kalibr on Ubuntu 16.04, 18.04, or 20.04 using the official Docker images or by building from source in a ROS catkin workspace."
+---
+
+Kalibr can be installed in two ways: using Docker (recommended for most users) or building from source inside a ROS catkin workspace. Docker is simpler because it bundles all dependencies — including the correct ROS distribution, Python version, and native libraries — into a reproducible image.
+
+## System requirements
+
+- **OS**: Ubuntu 16.04, 18.04, or 20.04 (64-bit)
+- **ROS**: ROS 1 (Kinetic, Melodic, or Noetic depending on Ubuntu version)
+- **Docker**: Required for the Docker installation path
+- **RAM**: 8 GB or more recommended for calibration with large datasets
+
+<Tabs>
+  <Tab title="Docker (recommended)">
+
+Docker is the easiest way to get a fully working Kalibr environment. The provided Dockerfiles build a self-contained image with all system dependencies, ROS, and the compiled Kalibr workspace.
+
+<Steps>
+  <Step title="Install Docker">
+    If Docker is not already installed, follow the [official Docker installation guide](https://docs.docker.com/engine/install/ubuntu/) for your Ubuntu version. After installing, verify it works:
+
+    ```bash
+    docker run hello-world
+    ```
+  </Step>
+
+  <Step title="Clone the Kalibr repository">
+    ```bash
+    git clone https://github.com/ethz-asl/kalibr.git
+    cd kalibr
+    ```
+  </Step>
+
+  <Step title="Build the Docker image">
+    Choose the Dockerfile that matches your target Ubuntu version. Ubuntu 20.04 is recommended.
+
+    <Tabs>
+      <Tab title="Ubuntu 20.04 (recommended)">
+        ```bash
+        docker build -t kalibr -f Dockerfile_ros1_20_04 .
+        ```
+
+        This builds from `osrf/ros:noetic-desktop-full` and installs:
+        - Python 3 with scipy, matplotlib, and related packages
+        - Eigen3, Boost, SuiteSparse, OpenCV, TBB, BLAS, LAPACK
+        - `python3-catkin-tools` for the build system
+        - Kalibr compiled in Release mode inside `/catkin_ws`
+      </Tab>
+      <Tab title="Ubuntu 18.04">
+        ```bash
+        docker build -t kalibr -f Dockerfile_ros1_18_04 .
+        ```
+
+        Builds from `osrf/ros:melodic-desktop-full` with Python 2/3 dependencies.
+      </Tab>
+      <Tab title="Ubuntu 16.04">
+        ```bash
+        docker build -t kalibr -f Dockerfile_ros1_16_04 .
+        ```
+
+        Builds from `osrf/ros:kinetic-desktop-full` with Python 2 dependencies.
+      </Tab>
+    </Tabs>
+
+    <Note>
+      The build compiles all C++ libraries with `-j$(nproc)` threads. On a 4-core machine, expect 15–30 minutes for the first build.
+    </Note>
+  </Step>
+
+  <Step title="Run the container">
+    Mount a local directory into the container so you can pass ROS bags in and retrieve calibration results without copying files manually.
+
+    ```bash
+    docker run -it \
+      -e "DISPLAY" \
+      -e "QT_X11_NO_MITSHM=1" \
+      -v /tmp/.X11-unix:/tmp/.X11-unix:rw \
+      -v "$PWD/data:/data" \
+      kalibr
+    ```
+
+    The container's `ENTRYPOINT` sets `KALIBR_MANUAL_FOCAL_LENGTH_INIT=1` and drops you into a shell inside `/catkin_ws` with the ROS environment ready to use.
+
+    <Tip>
+      Place your ROS bag files and target YAML files in the `data/` directory on your host machine. They will be available at `/data` inside the container.
+    </Tip>
+  </Step>
+
+  <Step title="Source the workspace and verify">
+    Inside the running container, source the built workspace and confirm the tools are available:
+
+    ```bash
+    source /catkin_ws/devel/setup.bash
+    kalibr_calibrate_cameras --help
+    ```
+
+    You should see the help output for the camera calibration tool.
+  </Step>
+</Steps>
+
+  </Tab>
+  <Tab title="Source build">
+
+Building from source gives you the most control and is useful when you need to modify Kalibr's code or integrate it into an existing ROS workspace.
+
+<Steps>
+  <Step title="Install ROS">
+    Install a supported ROS 1 distribution for your Ubuntu version:
+
+    | Ubuntu | ROS distribution |
+    |---|---|
+    | 20.04 | ROS Noetic |
+    | 18.04 | ROS Melodic |
+    | 16.04 | ROS Kinetic |
+
+    Follow the [official ROS installation instructions](https://www.ros.org/install/) for your distribution.
+  </Step>
+
+  <Step title="Install system dependencies">
+    Install the required libraries. This example uses ROS Noetic on Ubuntu 20.04:
+
+    ```bash
+    sudo apt-get update && sudo apt-get install -y \
+      git wget autoconf automake \
+      python3-dev python3-pip python3-scipy python3-matplotlib \
+      ipython3 python3-wxgtk4.0 python3-tk python3-igraph python3-pyx \
+      libeigen3-dev libboost-all-dev libsuitesparse-dev \
+      doxygen \
+      libopencv-dev \
+      libpoco-dev libtbb-dev libblas-dev liblapack-dev libv4l-dev \
+      python3-catkin-tools python3-osrf-pycommon
+    ```
+
+    <Note>
+      For Ubuntu 18.04 (Melodic), replace `python3-*` packages with the appropriate `python-*` equivalents, and replace `python3-catkin-tools` with `python-catkin-tools`. For Ubuntu 16.04 (Kinetic), use `python2.7-dev` and `python-wxgtk3.0`.
+    </Note>
+  </Step>
+
+  <Step title="Create a catkin workspace">
+    ```bash
+    mkdir -p ~/catkin_ws/src
+    cd ~/catkin_ws
+    catkin init
+    catkin config --extend /opt/ros/noetic
+    catkin config --cmake-args -DCMAKE_BUILD_TYPE=Release
+    ```
+
+    Adjust `/opt/ros/noetic` to match your installed ROS distribution (`melodic` or `kinetic`).
+  </Step>
+
+  <Step title="Clone Kalibr into the workspace">
+    ```bash
+    cd ~/catkin_ws/src
+    git clone https://github.com/ethz-asl/kalibr.git
+    ```
+  </Step>
+
+  <Step title="Build Kalibr">
+    ```bash
+    cd ~/catkin_ws
+    catkin build -j$(nproc)
+    ```
+
+    <Note>
+      The build compiles several C++ libraries. Allow 15–30 minutes on a typical workstation. Use `-j4` or a lower number if you run out of memory.
+    </Note>
+  </Step>
+
+  <Step title="Source the workspace">
+    Add the workspace to your shell environment. Run this once to add it permanently:
+
+    ```bash
+    echo "source ~/catkin_ws/devel/setup.bash" >> ~/.bashrc
+    source ~/.bashrc
+    ```
+
+    Or source it manually for the current session:
+
+    ```bash
+    source ~/catkin_ws/devel/setup.bash
+    ```
+  </Step>
+
+  <Step title="Verify the installation">
+    ```bash
+    kalibr_calibrate_cameras --help
+    ```
+
+    A successful installation prints the usage information for the camera calibration tool.
+
+    <Tip>
+      Set `export KALIBR_MANUAL_FOCAL_LENGTH_INIT=1` in your shell to enable the manual focal length fallback if automatic initialization fails.
+    </Tip>
+  </Step>
+</Steps>
+
+  </Tab>
+</Tabs>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Docker build fails on apt-get install">
+    Run `docker build --no-cache` to force a fresh package list fetch, or check that your host has network access during the build.
+  </Accordion>
+  <Accordion title="catkin build fails with 'Could not find package'">
+    Verify that `catkin config --extend` points to the correct ROS installation path and that you sourced the ROS setup script (`source /opt/ros/<distro>/setup.bash`) before running `catkin build`.
+  </Accordion>
+  <Accordion title="kalibr_calibrate_cameras: command not found">
+    You need to source the workspace before using Kalibr commands. Run `source ~/catkin_ws/devel/setup.bash` (source build) or `source /catkin_ws/devel/setup.bash` (Docker).
+  </Accordion>
+  <Accordion title="Focal length initialization fails">
+    Set `export KALIBR_MANUAL_FOCAL_LENGTH_INIT=1` before running any calibration command. The Docker image sets this automatically.
+  </Accordion>
+</AccordionGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Run your first end-to-end camera calibration with an AprilGrid target.
+  </Card>
+  <Card title="Calibration targets" icon="grid-2x2" href="/targets/overview">
+    Learn how to generate and print AprilGrid and checkerboard calibration targets.
+  </Card>
+</CardGroup>

@@ -1,24 +1,11 @@
 {
-  "$schema": "https://mintlify.com/docs.json",
-  "name": "Kalibr",
+  "projectType": "cli-tool",
+  "projectName": "Kalibr",
+  "projectDescription": "A visual-inertial calibration toolbox for multi-camera, camera-IMU, and rolling shutter camera calibration using ROS bag data.",
   "theme": "aspen",
-  "colors": {
-    "primary": "#242b2c",
-    "light": "#6a6a6d",
-    "dark": "#ebeaea"
-  },
-  "favicon": "https://media.brand.dev/bbb21190-6987-4c67-9b0d-d149e82e27b6.png",
-  "navbar": {
-    "primary": {
-      "type": "github",
-      "href": "https://github.com/ethz-asl/kalibr"
-    }
-  },
-  "footer": {
-    "socials": {
-      "github": "https://github.com/ethz-asl/kalibr"
-    }
-  },
+  "primaryColor": "#242b2c",
+  "lightColor": "#6a6a6d",
+  "darkColor": "#ebeaea",
   "navigation": {
     "tabs": [
       {
@@ -91,5 +78,33 @@
         ]
       }
     ]
-  }
+  },
+  "keyFeatures": [
+    "Multi-camera intrinsic and extrinsic calibration with non-overlapping fields of view",
+    "Camera-IMU spatial and temporal calibration",
+    "Multi-IMU spatial and temporal calibration",
+    "Rolling shutter camera full intrinsic calibration",
+    "Support for multiple camera models: pinhole, omni, EUCM, double sphere",
+    "Multiple distortion models: radtan, equidistant, FOV",
+    "Calibration target PDF generation (AprilGrid, checkerboard)",
+    "Docker-based installation for ROS 1 (Ubuntu 16.04, 18.04, 20.04)",
+    "Continuous-time batch estimation using B-splines",
+    "Export calibration results for maplab, MSF, OKVIS, ROVIO"
+  ],
+  "publicApiSurface": [
+    "kalibr_calibrate_cameras",
+    "kalibr_calibrate_imu_camera",
+    "kalibr_calibrate_rs_cameras",
+    "kalibr_create_target_pdf",
+    "kalibr_bagcreater",
+    "kalibr_bagextractor",
+    "kalibr_camera_focus",
+    "kalibr_camera_validator",
+    "kalibr_visualize_calibration",
+    "kalibr_visualize_distortion",
+    "kalibr_maplab_config",
+    "kalibr_msf_config",
+    "kalibr_okvis_config",
+    "kalibr_rovio_config"
+  ]
 }

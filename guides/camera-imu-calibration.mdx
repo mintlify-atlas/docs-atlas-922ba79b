@@ -1,0 +1,163 @@
+---
+title: "Calibrate a camera-IMU system with Kalibr"
+description: "Estimate the spatial transform, time offset, and IMU intrinsics between a camera chain and an IMU using kalibr_calibrate_imu_camera."
+---
+
+`kalibr_calibrate_imu_camera` determines the rigid-body transformation between each camera in a chain and an IMU (`T_cam_imu`), the temporal offset between camera and IMU timestamps, and optionally additional IMU intrinsic parameters such as axis misalignment and scale factors. The optimizer fits a continuous-time B-spline trajectory to the combined sensor data, which makes it robust to imperfect synchronization and different sampling rates.
+
+<Info>
+  Camera-IMU calibration requires a pre-calibrated camera chain. Run [multi-camera calibration](/guides/multi-camera-calibration) first and use the resulting `camchain.yaml` as input here.
+</Info>
+
+## Prerequisites
+
+- A ROS bag with image topics (from every camera in the chain) and at least one IMU topic, recorded together while moving the rig in front of an AprilGrid target
+- `camchain.yaml` — output of `kalibr_calibrate_cameras`
+- `imu.yaml` — IMU noise parameter file (see [IMU YAML reference](/reference/imu-yaml))
+- `aprilgrid.yaml` — target configuration (same file used for camera calibration)
+
+## IMU YAML format
+
+The IMU YAML file describes the noise characteristics of the IMU and the ROS topic on which measurements are published. Noise parameters are typically taken from the IMU datasheet and should be in the continuous-time (rate-density) form.
+
+```yaml imu.yaml (ADIS16448 example)
+rostopic: /imu0
+update_rate: 200.0
+
+accelerometer_noise_density: 0.006      # [m/s^2/sqrt(Hz)]
+accelerometer_random_walk:   0.0002     # [m/s^3/sqrt(Hz)]
+
+gyroscope_noise_density:     0.0004     # [rad/s/sqrt(Hz)]
+gyroscope_random_walk:       4.0e-06    # [rad/s^2/sqrt(Hz)]
+```
+
+<Warning>
+  Using incorrect noise parameters degrades calibration quality. Over-confident values (too small) can cause the optimizer to reject valid IMU measurements; under-confident values (too large) reduce the influence of the IMU. When in doubt, use values slightly larger than the datasheet specification.
+</Warning>
+
+## IMU models
+
+The `--imu-models` flag selects the complexity of the IMU intrinsic model to estimate:
+
+| Model | Parameters estimated | Use when |
+|---|---|---|
+| `calibrated` | None (uses provided noise values only) | Factory-calibrated IMUs, single-IMU setups |
+| `scale-misalignment` | Scale matrix and axis misalignment for both gyroscope and accelerometer | When axis alignment errors are significant |
+| `scale-misalignment-size-effect` | All of the above plus accelerometer lever-arm offsets | High-quality IMUs where size-effect matters |
+
+When only one IMU YAML is provided and `--imu-models` is omitted, the tool defaults to `calibrated` for backward compatibility.
+
+## Step-by-step calibration
+
+<Steps>
+  <Step title="Record a calibration bag">
+    Move the camera-IMU rig in front of the AprilGrid target with deliberate, varied motion:
+
+    - Include all six degrees of freedom — translations along each axis and rotations about each axis
+    - Excite each axis independently as well as in combination
+    - Maintain the target in the camera field of view throughout
+    - Record for at least 30–60 seconds of continuous motion
+
+    <Tip>
+      Slow rotation around each axis separately helps the optimizer separate the gyroscope bias from the actual rotation. Fast translations along each axis help observe the accelerometer axes.
+    </Tip>
+  </Step>
+
+  <Step title="Prepare configuration files">
+    Ensure you have three YAML files ready:
+
+    ```
+    camchain.yaml      # from kalibr_calibrate_cameras
+    imu.yaml           # IMU noise parameters and ROS topic
+    aprilgrid.yaml     # calibration target description
+    ```
+
+    The `camchain.yaml` must include the `rostopic` field for each camera — Kalibr reads image data directly from the bag using those topic names.
+  </Step>
+
+  <Step title="Run the calibrator">
+    ```bash
+    kalibr_calibrate_imu_camera \
+      --bag MYROSBAG.bag \
+      --cam camchain.yaml \
+      --imu imu.yaml \
+      --target aprilgrid.yaml
+    ```
+
+    Temporal calibration is enabled by default. The tool first estimates a time-shift prior from cross-correlation of angular rate norms, then refines it jointly with the spatial parameters in the batch optimizer.
+
+    To disable temporal calibration (not recommended unless the sensors are hardware-synchronized with sub-millisecond accuracy):
+
+    ```bash
+      --no-time-calibration
+    ```
+  </Step>
+
+  <Step title="Review the output files">
+    Output files are written using the bag filename as a prefix:
+
+    | File | Contents |
+    |---|---|
+    | `MYROSBAG-camchain-imucam.yaml` | Extended camera chain including `T_cam_imu` and time offsets for each camera |
+    | `MYROSBAG-imu.yaml` | Calibrated IMU parameters (pose relative to body frame, time offset, and intrinsics if estimated) |
+    | `MYROSBAG-results-imucam.txt` | Full numeric results including residual statistics |
+    | `MYROSBAG-report-imucam.pdf` | Visual report with reprojection errors, IMU residuals, and trajectory plots |
+
+    Check the PDF report for:
+    - Reprojection errors centered near zero
+    - IMU accelerometer and gyroscope residuals without strong temporal structure (structure indicates unmodeled dynamics or poor excitation)
+    - A time offset that is plausible for your hardware setup (typically under 50 ms for software-synchronized systems)
+  </Step>
+</Steps>
+
+## Using a non-default IMU model
+
+To use the `scale-misalignment` model instead of the default `calibrated`:
+
+```bash
+kalibr_calibrate_imu_camera \
+  --bag MYROSBAG.bag \
+  --cam camchain.yaml \
+  --imu imu.yaml \
+  --imu-models scale-misalignment \
+  --target aprilgrid.yaml
+```
+
+The `--imu-models` flag must be given once for each `--imu` file.
+
+## IMU rate and camera rate considerations
+
+The optimizer works best when the IMU sampling rate is significantly higher than the camera frame rate. A ratio of 10:1 or higher (for example, 200 Hz IMU with 20 Hz cameras) is typical and recommended. At lower ratios, the continuous-time spline has less IMU data to anchor it between camera frames, which degrades the spatial and temporal estimates.
+
+<Note>
+  The `update_rate` field in `imu.yaml` must match the actual publishing rate of the IMU topic in the bag. An incorrect value scales the noise covariance incorrectly and degrades calibration quality.
+</Note>
+
+## Recovering parameter covariance
+
+To recover the covariance of the calibration design variables (useful for understanding parameter uncertainty):
+
+```bash
+  --recover-covariance
+```
+
+This adds a covariance recovery step after optimization and prints standard deviations for the transformation and time offset parameters.
+
+## Additional options
+
+| Flag | Default | Description |
+|---|---|---|
+| `--bag-from-to T0 T1` | full bag | Process only the bag segment from `T0` to `T1` seconds |
+| `--bag-freq F` | all frames | Subsample images at `F` Hz |
+| `--max-iter N` | 30 | Maximum optimizer iterations |
+| `--timeoffset-padding S` | 0.03 | Time window (seconds) in which the time offset may vary during optimization |
+| `--export-poses` | off | Export optimized trajectory to CSV |
+
+<CardGroup cols={2}>
+  <Card title="Multi-camera calibration" icon="camera" href="/guides/multi-camera-calibration">
+    Run this step first to produce the camchain.yaml input required here.
+  </Card>
+  <Card title="IMU noise model" icon="chart-line" href="/concepts/imu-noise-model">
+    Background on IMU noise parameters and how to determine them from datasheets or Allan variance analysis.
+  </Card>
+</CardGroup>

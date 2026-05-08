@@ -1,0 +1,102 @@
+---
+title: "IMU noise model parameters for calibration"
+description: "Explains the four continuous-time noise parameters required in imu.yaml, how to determine them, and the IMU models Kalibr supports."
+---
+
+An IMU measures angular velocity (gyroscope) and specific force (accelerometer), but every real sensor is corrupted by noise and slowly drifting biases. Kalibr's camera-IMU calibration uses a probabilistic noise model to weight IMU measurements appropriately during batch optimization. Providing accurate noise parameters is one of the most important steps in getting a good calibration result — values that are too small will over-constrain the trajectory estimate, while values that are too large will effectively ignore the IMU.
+
+## The noise model
+
+Kalibr uses a standard **continuous-time IMU noise model** with two independent stochastic processes for each sensing axis:
+
+1. **Measurement noise** (noise density): zero-mean white Gaussian noise on the raw sensor output, characterized by its power spectral density. Corresponds to the noise you observe in a stationary sensor over short time periods.
+2. **Bias random walk**: the slowly drifting bias on each axis modeled as a Brownian motion (random walk). This captures the long-term instability of the sensor offset.
+
+Both processes are specified in continuous-time units (per square root of Hertz), not as discrete-sample standard deviations. Using discrete-time values directly is a common mistake that will degrade calibration quality.
+
+## Required parameters
+
+The `imu.yaml` file must contain the following five fields:
+
+| Field | Symbol | Units | Description |
+|---|---|---|---|
+| `accelerometer_noise_density` | σ_a | m/s² / √Hz | Accelerometer white noise spectral density |
+| `accelerometer_random_walk` | σ_ba | m/s³ / √Hz | Accelerometer bias random walk |
+| `gyroscope_noise_density` | σ_g | rad/s / √Hz | Gyroscope white noise spectral density |
+| `gyroscope_random_walk` | σ_bg | rad/s² / √Hz | Gyroscope bias random walk |
+| `update_rate` | — | Hz | IMU publishing frequency |
+
+<Note>
+Kalibr internally converts continuous-time noise density to discrete-time uncertainty using `σ_discrete = σ_continuous / sqrt(1 / update_rate)`. Ensure your `update_rate` matches the actual IMU message rate in your bag file.
+</Note>
+
+## Example: ADIS16448
+
+The following values are taken from the Kalibr source for the Analog Devices ADIS16448 IMU, which appears in the calibration dataset examples:
+
+```yaml
+rostopic: /imu0
+update_rate: 200.0
+
+accelerometer_noise_density: 0.006    # m/s^2/sqrt(Hz)
+accelerometer_random_walk: 0.0002     # m/s^3/sqrt(Hz)
+gyroscope_noise_density: 0.0004       # rad/s/sqrt(Hz)
+gyroscope_random_walk: 4.0e-06        # rad/s^2/sqrt(Hz)
+```
+
+For consumer-grade IMUs (e.g., MPU-6000, BMI160) the noise density values are typically one to two orders of magnitude larger. Always use values specific to your sensor rather than these example numbers.
+
+## How to determine noise parameters
+
+The recommended method is **Allan variance analysis**, which is a time-domain technique for characterizing noise in inertial sensors. Record a static IMU bag (sensor stationary, free from vibration) for at least two hours, then compute the Allan deviation curve.
+
+- The **noise density** (σ_a or σ_g) is read from the flat region of the Allan deviation curve at an averaging time of 1 second. This is the "angle random walk" (ARW) for the gyroscope and "velocity random walk" (VRW) for the accelerometer.
+- The **bias random walk** (σ_ba or σ_bg) is read from the slope-1 region of the Allan deviation curve, corresponding to the minimum point before the curve rises.
+
+Several tools can compute Allan variance from a ROS bag:
+
+- [imu_utils](https://github.com/gaowenliang/imu_utils) (ROS package, outputs values in Kalibr format)
+- [allan_variance_ros](https://github.com/ori-drs/allan_variance_ros)
+
+Most IMU datasheets also publish noise spectral density and in-run bias stability values that can serve as starting estimates, though datasheet values are often optimistic.
+
+<Tip>
+If you do not have Allan variance data, start with the datasheet values and multiply the noise density by 2–4 to account for real-world installation and thermal effects. Kalibr is more sensitive to the noise density values than the random walk values.
+</Tip>
+
+## IMU models
+
+Kalibr supports three IMU models of increasing complexity, selected with `--imu-models` when running `kalibr_calibrate_imu_camera`:
+
+| Model string | Description |
+|---|---|
+| `calibrated` | Basic model: assumes the sensor axes are orthogonal and perfectly aligned with the IMU body frame. Only estimates extrinsic pose and time offset. |
+| `scale-misalignment` | Extends `calibrated` with per-axis scale factors and axis misalignment matrices (M) for both gyroscope and accelerometer. Also calibrates the gyroscope sensitivity to linear acceleration (the `A` matrix). |
+| `scale-misalignment-size-effect` | Extends `scale-misalignment` with lever arm vectors (`rx_i`, `ry_i`, `rz_i`) that model the physical separation between accelerometer proof masses along each axis (the "size effect"). |
+
+For most applications `calibrated` is sufficient. Use `scale-misalignment` or `scale-misalignment-size-effect` only when you have a high-quality IMU and observe systematic residuals with the basic model.
+
+## Common mistakes
+
+**Using discrete-time standard deviations instead of continuous-time spectral density**
+
+IMU datasheets sometimes quote noise in discrete units (e.g., μg/√Hz converted to m/s² for a single sample, or °/hr for bias instability). Kalibr expects continuous-time values. If you have a discrete-sample standard deviation σ_d, the equivalent continuous-time density is:
+
+```
+σ_continuous = σ_d * sqrt(update_rate)
+```
+
+**Setting noise parameters too small**
+
+If you set noise parameters much smaller than the actual sensor noise, the optimizer will trust the IMU too much and the spline trajectory will be pulled toward noisy IMU readings. This typically manifests as jagged, non-smooth trajectories and degraded reprojection errors.
+
+**Setting noise parameters too large**
+
+Excessively large noise parameters effectively disable the IMU contribution to the optimization, making the calibration rely entirely on camera observations. Time calibration and extrinsic estimation may still work, but IMU intrinsic calibration will be unreliable.
+
+## Related pages
+
+- [imu.yaml format](/reference/imu-yaml)
+- [Camera-IMU calibration guide](/guides/camera-imu-calibration)
+- [Multi-IMU calibration guide](/guides/multi-imu-calibration)
+- [Continuous-time estimation](/concepts/continuous-time-estimation)

@@ -1,0 +1,118 @@
+---
+title: "kalibr_calibrate_rs_cameras — rolling shutter calibration"
+description: "Calibrate the full intrinsics of a single rolling shutter camera, including shutter parameters, using an AprilGrid target in a ROS bag."
+---
+
+`kalibr_calibrate_rs_cameras` estimates the intrinsic parameters of a single rolling shutter camera, including the per-row time offset introduced by the rolling shutter mechanism. It reads a single image topic from a ROS bag, detects an AprilGrid target, and runs a continuous-time optimization. Global-shutter models are also supported for comparison or fallback.
+
+## Synopsis
+
+```bash
+kalibr_calibrate_rs_cameras --model <model> \
+                             --frame-rate <fps> \
+                             --topic <topic> \
+                             --bag <file.bag> \
+                             --target <target.yaml> \
+                             --inverse-feature-variance <value>
+```
+
+## Example
+
+```bash
+kalibr_calibrate_rs_cameras \
+  --model pinhole-radtan-rs \
+  --target aprilgrid.yaml \
+  --bag MYROSBAG.bag \
+  --topic /cam0/image_raw \
+  --inverse-feature-variance 1 \
+  --frame-rate 20
+```
+
+`aprilgrid.yaml`:
+
+```yaml
+target_type: 'aprilgrid'
+tagCols: 6
+tagRows: 6
+tagSize: 0.088  # meters
+tagSpacing: 0.3 # fraction of tagSize
+```
+
+## Camera models
+
+| Model string | Projection | Distortion | Shutter |
+|---|---|---|---|
+| `pinhole-radtan-rs` | Pinhole | Radial-tangential | Rolling |
+| `pinhole-equi-rs` | Pinhole | Equidistant (fisheye) | Rolling |
+| `omni-radtan-rs` | Omnidirectional | Radial-tangential | Rolling |
+| `pinhole-radtan` | Pinhole | Radial-tangential | Global |
+| `pinhole-equi` | Pinhole | Equidistant (fisheye) | Global |
+| `omni-radtan` | Omnidirectional | Radial-tangential | Global |
+
+The `-rs` suffix identifies rolling shutter models. Use global-shutter models (`pinhole-radtan`, `pinhole-equi`, `omni-radtan`) when you want to calibrate a global-shutter camera with this tool.
+
+## Flags
+
+<ParamField query="--model" type="string" required>
+  Camera model string. See the table above for accepted values.
+</ParamField>
+
+<ParamField query="--frame-rate" type="integer" required>
+  Approximate frame rate of the camera in Hz. Used to initialize the rolling shutter time offset.
+</ParamField>
+
+### Data source
+
+<ParamField query="--bag" type="string">
+  Path to the ROS bag file containing image data.
+</ParamField>
+
+<ParamField query="--topic" type="string" required>
+  ROS image topic name to read from the bag.
+</ParamField>
+
+<ParamField query="--bag-from-to" type="float float">
+  Use only bag data within this time window: start and end in seconds from the beginning of the bag.
+</ParamField>
+
+<ParamField query="--bag-freq" type="float">
+  Downsample to this feature extraction frequency in Hz.
+</ParamField>
+
+### Calibration target configuration
+
+<ParamField query="--target" type="string" required>
+  Path to the calibration target configuration YAML file. See [target YAML format](/reference/target-yaml).
+</ParamField>
+
+<ParamField query="--inverse-feature-variance" type="float" required>
+  Estimated inverse variance of the feature detector. This value weights the feature observation terms in the optimization. A value of `1` is a common starting point.
+</ParamField>
+
+### Optimization options
+
+<ParamField query="--max-iter" type="integer">
+  Maximum number of optimization iterations. Default: `30`.
+</ParamField>
+
+### Output options
+
+<ParamField query="--verbose" type="boolean">
+  Enable detailed debug-level logging. Also disables interactive plots.
+</ParamField>
+
+<ParamField query="--show-extraction" type="boolean">
+  Display each image during calibration target extraction. Disables interactive plots.
+</ParamField>
+
+<Warning>
+  Because rolling shutter calibration models image-plane distortion jointly with the per-row time offset, significant lens distortion can cause the initial transformation estimation to fail. The tool skips transformation estimation internally (`noTransformation=True`) for this reason — ensure the AprilGrid is clearly and fully visible across the recording.
+</Warning>
+
+## Related pages
+
+- [Rolling shutter calibration guide](/guides/rolling-shutter-calibration)
+- [Camera models](/concepts/camera-models)
+- [Target YAML format](/reference/target-yaml)
+- [Calibration targets overview](/targets/overview)
+- [AprilGrid target](/targets/aprilgrid)

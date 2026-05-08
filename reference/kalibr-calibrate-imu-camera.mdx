@@ -1,0 +1,171 @@
+---
+title: "kalibr_calibrate_imu_camera — camera-IMU calibration"
+description: "Calibrate the spatial and temporal parameters between a camera chain and one or more IMUs using continuous-time batch estimation over a ROS bag."
+---
+
+`kalibr_calibrate_imu_camera` estimates the rigid-body transformation and time offset between a camera chain and one or more IMUs. It reads image and IMU topics from a ROS bag together with a pre-computed camera chain calibration, then solves a continuous-time batch optimization to produce a `camchain-imucam.yaml`, an `imu.yaml`, and a PDF report. Temporal calibration is enabled by default.
+
+## Synopsis
+
+```bash
+kalibr_calibrate_imu_camera --bag <file.bag> \
+                             --cam <camchain.yaml> \
+                             --imu <imu.yaml> \
+                             --target <target.yaml>
+```
+
+## Example
+
+```bash
+kalibr_calibrate_imu_camera \
+  --bag MYROSBAG.bag \
+  --cam camchain.yaml \
+  --imu imu.yaml \
+  --target aprilgrid.yaml
+```
+
+`aprilgrid.yaml`:
+
+```yaml
+target_type: 'aprilgrid'
+tagCols: 6
+tagRows: 6
+tagSize: 0.088
+tagSpacing: 0.3
+```
+
+`imu.yaml` (example for ADIS16448):
+
+```yaml
+accelerometer_noise_density: 0.006
+accelerometer_random_walk: 0.0002
+gyroscope_noise_density: 0.0004
+gyroscope_random_walk: 4.0e-06
+update_rate: 200.0
+```
+
+## Flags
+
+### Dataset source
+
+<ParamField query="--bag" type="string" required>
+  Path to the ROS bag file containing image and IMU data. Topic names are read from the configuration YAML files.
+</ParamField>
+
+<ParamField query="--bag-from-to" type="float float">
+  Use only bag data within this time window: start and end in seconds from the beginning of the bag.
+</ParamField>
+
+<ParamField query="--bag-freq" type="float">
+  Downsample to this feature extraction frequency in Hz.
+</ParamField>
+
+<ParamField query="--perform-synchronization" type="boolean">
+  Perform a clock synchronization between the camera and IMU clocks according to the algorithm by Zhang et al. (2002) before running the estimator.
+</ParamField>
+
+### Camera system configuration
+
+<ParamField query="--cams" type="string">
+  Path to the camera chain configuration YAML file. This is typically the `camchain.yaml` output from `kalibr_calibrate_cameras`. See [camchain YAML format](/reference/camchain-yaml).
+</ParamField>
+
+<ParamField query="--recompute-camera-chain-extrinsics" type="boolean">
+  Recompute the camera chain extrinsics during optimization instead of treating them as fixed. Recommended only for debugging problems with chain extrinsics.
+</ParamField>
+
+<ParamField query="--reprojection-sigma" type="float">
+  Standard deviation of the reprojected corner point distribution in pixels. This value is used to weight the reprojection error terms. Default: `1.0`.
+</ParamField>
+
+### IMU configuration
+
+<ParamField query="--imu" type="string[]" required>
+  One or more paths to IMU noise parameter YAML files. The first IMU listed is used as the reference IMU. See [IMU YAML format](/reference/imu-yaml).
+</ParamField>
+
+<ParamField query="--imu-delay-by-correlation" type="boolean">
+  Estimate the time delay between multiple IMUs by cross-correlation. By default no temporal calibration between IMUs is performed.
+</ParamField>
+
+<ParamField query="--imu-models" type="string[]">
+  IMU model strings, one per `--imu` entry. Accepted values: `calibrated`, `scale-misalignment`, `scale-misalignment-size-effect`. Defaults to `calibrated` when only a single IMU is provided and this flag is omitted.
+</ParamField>
+
+### Calibration target
+
+<ParamField query="--target" type="string" required>
+  Path to the calibration target configuration YAML file. See [target YAML format](/reference/target-yaml).
+</ParamField>
+
+### Optimization options
+
+<ParamField query="--no-time-calibration" type="boolean">
+  Disable temporal calibration. The time offset between camera and IMU will not be estimated and is assumed to be zero.
+</ParamField>
+
+<ParamField query="--max-iter" type="integer">
+  Maximum number of optimization iterations. Default: `30`.
+</ParamField>
+
+<ParamField query="--recover-covariance" type="boolean">
+  Recover and report the covariance of all estimated design variables after optimization.
+</ParamField>
+
+<ParamField query="--timeoffset-padding" type="float">
+  Maximum allowed change in the time offset estimate during optimization, in seconds. Default: `0.03` (30 ms).
+</ParamField>
+
+### Output options
+
+<ParamField query="--show-extraction" type="boolean">
+  Display each image during calibration target extraction. Enabling this flag disables interactive plots.
+</ParamField>
+
+<ParamField query="--extraction-stepping" type="boolean">
+  Step through each image individually during extraction, waiting for a keypress. Disables interactive plots.
+</ParamField>
+
+<ParamField query="--verbose" type="boolean">
+  Enable detailed debug-level logging. Also enables `--show-extraction` and disables interactive plots.
+</ParamField>
+
+<ParamField query="--dont-show-report" type="boolean">
+  Do not open the PDF report on screen after calibration finishes.
+</ParamField>
+
+<ParamField query="--export-poses" type="boolean">
+  Export the optimized camera-IMU poses to a CSV file with columns: `time_ns`, `position`, `quaternion`.
+</ParamField>
+
+## Output files
+
+| File | Description |
+|---|---|
+| `<bag>-camchain-imucam.yaml` | Camera-IMU extrinsics and time offsets |
+| `<bag>-imu.yaml` | Updated IMU calibration parameters |
+| `<bag>-results-imucam.txt` | Detailed numeric calibration results |
+| `<bag>-report-imucam.pdf` | PDF report with error statistics and plots |
+| `<bag>-poses-imucam-imu0.csv` | Optimized poses (only with `--export-poses`) |
+
+## IMU models
+
+| Model string | Description |
+|---|---|
+| `calibrated` | Standard IMU model with fixed scale and alignment (default) |
+| `scale-misalignment` | Adds scale factor and axis misalignment estimation |
+| `scale-misalignment-size-effect` | Adds size-effect (lever-arm) estimation on top of scale and misalignment |
+
+<Tip>
+  Run `kalibr_calibrate_cameras` first to produce the `camchain.yaml` required by `--cams`. The camera chain must have sufficient target observations to initialize the spline trajectory.
+</Tip>
+
+## Related pages
+
+- [Camera-IMU calibration guide](/guides/camera-imu-calibration)
+- [Multi-IMU calibration guide](/guides/multi-imu-calibration)
+- [IMU noise model](/concepts/imu-noise-model)
+- [Continuous-time estimation](/concepts/continuous-time-estimation)
+- [IMU YAML format](/reference/imu-yaml)
+- [Camchain YAML format](/reference/camchain-yaml)
+- [Output files](/reference/output-files)

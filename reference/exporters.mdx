@@ -1,0 +1,135 @@
+---
+title: "Export Kalibr calibration to VIO frameworks"
+description: "Reference for Kalibr's four exporter scripts that convert calibration output YAML files into configuration formats for maplab, OKVIS, MSF, and ROVIO."
+---
+
+After running `kalibr_calibrate_imu_camera`, you have a `<bagtag>-camchain-imucam.yaml` and a `<bagtag>-imu.yaml` containing the full spatial and temporal calibration of your sensor rig. The Kalibr exporter scripts convert these files into the configuration formats expected by popular VIO (Visual-Inertial Odometry) and SLAM frameworks, saving you from manually transcribing matrix values.
+
+All exporters are standalone Python scripts installed alongside Kalibr. Each reads your Kalibr output files and produces one or more framework-specific configuration files.
+
+## kalibr_maplab_config
+
+Converts between Kalibr format and the [maplab](https://github.com/ethz-asl/maplab) VIO framework format. The script handles both directions: Kalibr → maplab and maplab → Kalibr.
+
+**Kalibr → maplab `sensors.yaml`:**
+
+```bash
+kalibr_maplab_config \
+  --cam recording-camchain-imucam.yaml \
+  --imu recording-imu.yaml \
+  --out sensors.yaml
+```
+
+**Kalibr → maplab `ncamera.yaml`** (camera-only, no IMU):
+
+```bash
+kalibr_maplab_config \
+  --cam recording-camchain-imucam.yaml \
+  --to-ncamera \
+  --out ncamera.yaml
+```
+
+**maplab → Kalibr:**
+
+```bash
+kalibr_maplab_config \
+  --cam sensors.yaml \
+  --out recording-camchain-imucam.yaml \
+  --imu-out recording-imu.yaml
+```
+
+| Flag | Description |
+|------|-------------|
+| `--cam` | Input camera YAML (Kalibr `camchain-imucam.yaml` or maplab `sensors.yaml`/`ncamera.yaml`) |
+| `--imu` | Input Kalibr IMU YAML (only for Kalibr → maplab conversion) |
+| `--label` | NCamera label name (default: `ncamera`) |
+| `--out` | Output file path (auto-named if omitted) |
+| `--imu-out` | IMU output file path (maplab → Kalibr only) |
+| `--to-ncamera` | Produce `ncamera.yaml` instead of full `sensors.yaml` |
+
+The script auto-detects the input format by looking for `cam0` (Kalibr format) or `ncameras` (maplab format) keys at the top level.
+
+## kalibr_okvis_config
+
+Converts a `camchain-imucam.yaml` to the YAML camera block format used by [OKVIS](https://github.com/ethz-asl/okvis), an open keyframe-based visual-inertial odometry system.
+
+```bash
+kalibr_okvis_config \
+  --cam recording-camchain-imucam.yaml \
+  --mav MY_MAV_NAME \
+  --out okvis_config.yaml
+```
+
+If `--out` is omitted, the configuration block is printed to stdout so you can copy it manually.
+
+| Flag | Description |
+|------|-------------|
+| `--cam` | Kalibr `camchain-imucam.yaml` input file |
+| `--mav` | Name of the MAV/platform (used for the `base_topic` path) |
+| `--out` | Output file path (optional; prints to stdout if omitted) |
+
+<Note>
+  OKVIS only supports the `pinhole` projection model. Cameras using `omni`, `eucm`, or `ds` models will be skipped with a warning.
+</Note>
+
+The output is a YAML snippet containing a `cameras:` block with `T_SC` (sensor-to-camera transform), image dimensions, distortion coefficients, distortion type, focal length, and principal point for each camera.
+
+## kalibr_msf_config
+
+Converts two `camchain-imucam.yaml` files — one calibrated relative to a VI IMU and one relative to a MAV IMU — into a [MSF (Multi-Sensor Fusion)](https://github.com/ethz-asl/ethzasl_msf) ROS parameter file. MSF is a graph-based sensor fusion framework that fuses IMU, camera, and other sensor data.
+
+```bash
+kalibr_msf_config \
+  --viimu recording-vi-camchain-imucam.yaml \
+  --mavimu recording-mav-camchain-imucam.yaml \
+  --out msf_config.yaml
+```
+
+If `--out` is omitted, the configuration block is printed to stdout.
+
+| Flag | Description |
+|------|-------------|
+| `--viimu` | Kalibr `camchain-imucam.yaml` calibrated relative to the VI IMU |
+| `--mavimu` | Kalibr `camchain-imucam.yaml` calibrated relative to the MAV IMU |
+| `--out` | Output file path (optional; prints to stdout if omitted) |
+
+The script computes the relative transformation between the two IMUs from `T_cam_imu` entries, extracts the time delay from `timeshift_cam_imu`, and inserts these values into an MSF parameter template.
+
+## kalibr_rovio_config
+
+Converts a `camchain-imucam.yaml` to the `.info` configuration format used by [ROVIO](https://github.com/ethz-asl/rovio), a robust visual-inertial odometry estimator based on iterated extended Kalman filtering.
+
+```bash
+kalibr_rovio_config \
+  --cam recording-camchain-imucam.yaml
+```
+
+The script writes two types of output files in the current directory:
+
+- `rovio_test.info` — main ROVIO configuration with IMU-to-camera extrinsics (`qCM_x/y/z/w` and `MrMC_x/y/z`) for each camera
+- `rovio_cam0.yaml`, `rovio_cam1.yaml`, … — per-camera intrinsic files in ROS camera calibration format
+
+| Flag | Description |
+|------|-------------|
+| `--cam` | Kalibr `camchain-imucam.yaml` input file |
+
+<Note>
+  ROVIO only supports the `pinhole` projection model. Cameras using `omni`, `eucm`, or `ds` models will be skipped with a warning.
+</Note>
+
+ROVIO uses Hamilton quaternion convention. The exporter accounts for the difference between Kalibr's JPL quaternion convention and Hamilton convention when writing `qCM` values.
+
+## Framework summary
+
+| Exporter | Framework | Output format | Bidirectional |
+|---|---|---|---|
+| `kalibr_maplab_config` | [maplab](https://github.com/ethz-asl/maplab) | `sensors.yaml` / `ncamera.yaml` | Yes |
+| `kalibr_okvis_config` | [OKVIS](https://github.com/ethz-asl/okvis) | YAML camera block | No |
+| `kalibr_msf_config` | [MSF](https://github.com/ethz-asl/ethzasl_msf) | ROS parameter YAML | No |
+| `kalibr_rovio_config` | [ROVIO](https://github.com/ethz-asl/rovio) | `.info` + per-camera YAML | No |
+
+## Related pages
+
+- [camchain.yaml format](/reference/camchain-yaml)
+- [Output files](/reference/output-files)
+- [Camera-IMU calibration guide](/guides/camera-imu-calibration)

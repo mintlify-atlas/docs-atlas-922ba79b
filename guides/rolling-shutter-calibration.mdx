@@ -1,0 +1,139 @@
+---
+title: "Rolling shutter camera intrinsic calibration"
+description: "Calibrate rolling shutter cameras with kalibr_calibrate_rs_cameras, estimating projection, distortion, and per-row readout time parameters."
+---
+
+Rolling shutter cameras expose each row of the sensor at a slightly different instant, introducing geometric distortion in any image captured during camera or scene motion. `kalibr_calibrate_rs_cameras` extends the standard intrinsic calibration to jointly estimate the projection parameters, distortion coefficients, and the per-row **readout time** — the time difference between the first and last row of the sensor being exposed.
+
+Global shutter cameras can also be calibrated with this tool using the non-`-rs` models, though `kalibr_calibrate_cameras` is typically more convenient for that case.
+
+<Note>
+  This tool calibrates a single camera at a time. For multi-camera rigs with rolling shutter sensors, calibrate each camera independently first, then assemble the chain manually or run the standard multi-camera tool using the global-shutter models (which share the same intrinsic parameters).
+</Note>
+
+## Available models
+
+### Rolling shutter models
+
+| Model | Projection | Distortion |
+|---|---|---|
+| `pinhole-radtan-rs` | Pinhole | Radial-tangential |
+| `pinhole-equi-rs` | Pinhole | Equidistant (fisheye) |
+| `omni-radtan-rs` | Omnidirectional | Radial-tangential |
+
+### Global shutter models (also supported)
+
+| Model | Projection | Distortion |
+|---|---|---|
+| `pinhole-radtan` | Pinhole | Radial-tangential |
+| `pinhole-equi` | Pinhole | Equidistant |
+| `omni-radtan` | Omnidirectional | Radial-tangential |
+
+The `-rs` suffix identifies models that include the rolling shutter readout time as an additional estimated parameter. Use these for CMOS rolling shutter cameras. Use the plain models only if you specifically need the RS calibration pipeline for a global shutter camera.
+
+## Prerequisites
+
+- A ROS bag with image data from the camera to calibrate
+- An `aprilgrid.yaml` target configuration file
+- The approximate frame rate of the camera (integer, in Hz)
+- An estimate of the inverse feature detection variance (a tuning parameter, typically `1`)
+
+## Step-by-step calibration
+
+<Steps>
+  <Step title="Print and measure the AprilGrid target">
+    Use the same AprilGrid target as for other Kalibr calibrations. Measure the printed `tagSize` carefully — any error here directly biases the estimated intrinsics.
+
+    ```yaml aprilgrid.yaml
+    target_type: 'aprilgrid'
+    tagCols: 6
+    tagRows: 6
+    tagSize: 0.088    # meters — actual printed tag size
+    tagSpacing: 0.3   # as a fraction of tagSize
+    ```
+  </Step>
+
+  <Step title="Record a calibration bag">
+    Rolling shutter calibration requires motion during image capture to observe the readout time effect. A static sequence provides no information about the readout parameter.
+
+    Guidelines for effective data collection:
+
+    - Move the camera (or the target) at a moderate speed during every frame — avoid static holds
+    - Include both translational and rotational motion
+    - Keep the full target visible in most frames
+    - Cover all regions of the image plane, especially corners
+
+    <Tip>
+      Faster lateral motion (camera panning or tilting quickly) produces more pronounced rolling shutter distortion and helps the estimator identify the readout time. However, avoid motion so fast that the target becomes blurred in individual frames.
+    </Tip>
+  </Step>
+
+  <Step title="Run the calibrator">
+    ```bash
+    kalibr_calibrate_rs_cameras \
+      --model pinhole-radtan-rs \
+      --target aprilgrid.yaml \
+      --bag MYROSBAG.bag \
+      --topic /cam0/image_raw \
+      --inverse-feature-variance 1 \
+      --frame-rate 20
+    ```
+
+    Both `--frame-rate` and `--inverse-feature-variance` are required arguments.
+
+    `--frame-rate` provides the nominal camera frame rate (integer Hz). This is used internally to set up the temporal parameterization of the rolling shutter model. Set it to the closest integer to your camera's actual frame rate.
+
+    `--inverse-feature-variance` is the inverse of the assumed variance of corner detection positions in pixels squared. A value of `1` means a standard deviation of 1 pixel is assumed. Increasing this value (for example, `4`) makes the optimizer treat corner detections as more precise and may produce tighter fits but can also overfit noisy detections.
+  </Step>
+
+  <Step title="Check the output">
+    The calibrator writes results using the bag filename as a prefix:
+
+    | File | Contents |
+    |---|---|
+    | `MYROSBAG-camchain.yaml` | Camera intrinsics including the readout time parameter |
+    | `MYROSBAG-results-cam.txt` | Detailed numeric results |
+    | `MYROSBAG-report-cam.pdf` | Visual report with reprojection error distribution |
+
+    In the results, look for the `line_delay` or readout time parameter. For a typical consumer rolling shutter camera at 30 fps, this is on the order of 10–30 µs per row. An estimated value near zero may indicate insufficient motion in the bag.
+  </Step>
+</Steps>
+
+## Selecting `--inverse-feature-variance`
+
+The `--inverse-feature-variance` parameter controls the relative weight given to visual corner observations versus the trajectory regularization in the optimizer. There is no universally correct value; the default of `1` is a reasonable starting point.
+
+- If the optimizer produces large reprojection errors or refuses to converge, try decreasing the value (for example, `0.5`).
+- If the estimates appear noisy across repeated runs with similar data, try increasing the value (for example, `2` or `4`).
+
+## Comparing to global shutter calibration
+
+If you are unsure whether your camera actually uses rolling shutter, calibrate with both a `-rs` model and the corresponding non-`-rs` model. If the readout time estimate from the `-rs` calibration is indistinguishable from zero within its uncertainty, the camera likely uses global shutter or has a negligible readout time for your use case.
+
+<Warning>
+  Do not use the rolling shutter intrinsics from this tool as input to `kalibr_calibrate_imu_camera`. The IMU-camera calibration pipeline uses the global shutter camera models internally. Use `kalibr_calibrate_cameras` with a non-`-rs` model to produce the `camchain.yaml` for IMU calibration.
+</Warning>
+
+## Troubleshooting
+
+### Readout time estimated as near zero
+
+The rolling shutter readout time is only observable when there is camera motion during exposure. If the bag contains primarily static frames, the readout time will not be identifiable. Re-record with deliberate, continuous motion throughout.
+
+### Optimizer does not converge
+
+Try the following in order:
+
+1. Use `--show-extraction` to verify that the AprilGrid is being detected correctly in most frames.
+2. Increase `--max-iter` beyond the default of 30.
+3. Reduce `--inverse-feature-variance` to give the optimizer more flexibility.
+4. Check that `--frame-rate` matches the actual camera frame rate. An incorrect frame rate sets up the time parameterization incorrectly.
+
+<CardGroup cols={2}>
+  <Card title="Multi-camera calibration" icon="camera" href="/guides/multi-camera-calibration">
+    Standard global shutter intrinsic and extrinsic calibration for camera rigs.
+  </Card>
+  <Card title="Camera models" icon="sliders" href="/concepts/camera-models">
+    Detailed reference for all supported projection and distortion models.
+  </Card>
+</CardGroup>

@@ -1,0 +1,77 @@
+---
+title: "kalibr_camera_validator — validate camera calibration live"
+description: "Validate a camera chain calibration in real time by streaming live ROS image topics and inspecting reprojection errors and stereo rectification overlays."
+---
+
+`kalibr_camera_validator` is a live validation tool that subscribes to ROS camera topics and displays reprojection error statistics in real time. It loads a camera chain calibration from a `camchain.yaml` file and a calibration target configuration, then shows a per-camera mono view with reprojection error overlays and a stereo-rectified pair view for each camera pair defined in the chain.
+
+This tool is useful for verifying a calibration in the field before proceeding to IMU calibration, and for qualitatively assessing how well the camera model fits the optics in live conditions.
+
+## Synopsis
+
+```bash
+kalibr_camera_validator --cam <camchain.yaml> --target <target.yaml>
+```
+
+## Example
+
+```bash
+kalibr_camera_validator \
+  --cam results-camchain.yaml \
+  --target aprilgrid.yaml
+```
+
+Point the camera at the calibration target while the validator is running. Reprojection errors are displayed as overlaid statistics in each camera window.
+
+## Flags
+
+<ParamField query="--target" type="string" required>
+  Path to the calibration target configuration YAML file. See [target YAML format](/reference/target-yaml).
+</ParamField>
+
+<ParamField query="--cam" type="string" required>
+  Path to the camera chain calibration YAML file, typically the `camchain.yaml` output from `kalibr_calibrate_cameras`. See [camchain YAML format](/reference/camchain-yaml).
+</ParamField>
+
+<ParamField query="--verbose" type="boolean">
+  Enable detailed debug-level logging.
+</ParamField>
+
+## Live display windows
+
+The validator opens one OpenCV window per camera and one rectified pair window per overlapping camera pair:
+
+| Window | Content |
+|---|---|
+| `Camera: <topic>` | Live image with detected corners, reprojected corners (yellow circles), and per-frame reprojection error statistics |
+| `Rectified view (cam0 and cam1)` | Side-by-side stereo-rectified images with horizontal epilines and cross-camera reprojection error statistics |
+
+### Reported statistics
+
+For each camera and each camera pair, the validator displays:
+
+| Statistic | Description |
+|---|---|
+| `mean_x`, `std_x`, `max_y`, `min_x` | X-component reprojection error statistics (px) |
+| `mean_y`, `std_y`, `max_y`, `min_y` | Y-component reprojection error statistics (px) |
+| `mean_L2`, `std_L2`, `max_L2`, `min_L2` | Euclidean (L2) reprojection error statistics (px) |
+
+<Note>
+  Processing is throttled internally to approximately 2 Hz to keep the display responsive. The validator uses approximate time synchronization (±20 ms) to align frames across cameras.
+</Note>
+
+## Supported image message types
+
+The validator subscribes to the topic specified in each camera's `camchain.yaml`. Both `sensor_msgs/Image` and `sensor_msgs/CompressedImage` are supported. If the topic name contains the string `compressed`, the tool subscribes to `CompressedImage` automatically.
+
+## Stereo rectification
+
+For each pair of cameras that share overlapping fields of view (as defined by the chain topology), the validator computes a stereo rectification using the Fusiello-Trucco-Verri algorithm. The rectified images are shown side-by-side. Horizontal epilines confirm alignment: corresponding points should lie on the same horizontal line in both rectified images if the calibration is accurate.
+
+## Related pages
+
+- [Multi-camera calibration guide](/guides/multi-camera-calibration)
+- [kalibr_calibrate_cameras](/reference/kalibr-calibrate-cameras)
+- [Camchain YAML format](/reference/camchain-yaml)
+- [Target YAML format](/reference/target-yaml)
+- [Output files](/reference/output-files)

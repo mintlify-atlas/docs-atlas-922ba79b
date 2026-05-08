@@ -1,0 +1,87 @@
+---
+title: "Continuous-time batch estimation in Kalibr"
+description: "Explains how Kalibr uses B-spline trajectories and batch optimization to jointly calibrate cameras and IMUs across asynchronous sensor streams."
+---
+
+Most sensor fusion algorithms track robot state at discrete time steps that align with one sensor's clock — typically the IMU. Kalibr takes a different approach: it represents the full trajectory as a **continuous-time function** defined over the entire recording. This makes it straightforward to evaluate the trajectory at any point in time, regardless of which sensor produced the measurement, and to calibrate the temporal offset between sensors as part of the same optimization.
+
+## B-spline pose representation
+
+Kalibr parameterizes the sensor trajectory as a **B-spline on the Lie group SE(3)** — the group of rigid-body transformations in 3D space. A B-spline is a piecewise-polynomial curve controlled by a set of knot points. Between knots, the trajectory is smooth (infinitely differentiable up to the polynomial order), which means angular velocity, linear velocity, and linear acceleration can all be computed analytically by evaluating derivatives of the same spline.
+
+From the source code (`IccSensors.py`), the default spline configuration is:
+
+| Parameter | Value | Description |
+|---|---|---|
+| `splineOrder` | 6 | Polynomial order of the B-spline (quintic) |
+| `poseKnotsPerSecond` | 100 | Knot density for the pose trajectory spline |
+| `biasKnotsPerSecond` | 70 | Knot density for the IMU bias splines |
+
+A higher knot density allows the spline to track faster motions, but also increases the number of optimization variables and computation time. The default of 100 pose knots per second is appropriate for most handheld or robot-mounted calibration sequences.
+
+The bias of each IMU axis is also modeled as a B-spline (the bias spline) rather than a constant, allowing slow drift during the calibration sequence to be accounted for. The bias spline uses a separate, lower knot density (`biasKnotsPerSecond=70`) since biases change much more slowly than the pose.
+
+## How measurements are fused
+
+Once the trajectory spline is initialized from the camera observations, Kalibr constructs a single nonlinear least-squares problem that includes error terms from every sensor:
+
+**Camera reprojection errors**: For each image, at each timestamp `t_cam`, the spline is evaluated to get the predicted camera pose. Known calibration target corner positions are projected through the camera model and compared to the detected pixel locations. The difference is the reprojection error.
+
+**IMU measurement errors**: For each IMU sample at timestamp `t_imu`, the spline derivative is evaluated to get the predicted angular velocity (from the spline's first-order rotational derivative) and linear acceleration (from the spline's second-order translational derivative, plus gravity). These predictions are compared to the actual IMU readings.
+
+Because the trajectory is a continuous function, both camera and IMU measurements can be evaluated at their own native timestamps. There is no requirement for the sensors to be synchronized — the spline serves as the common reference.
+
+## Temporal calibration
+
+The time offset between each camera and the reference IMU is estimated as a scalar design variable in the same optimization. An initial estimate is obtained by cross-correlating the norm of the camera angular velocity (computed from the spline) with the norm of the IMU gyroscope readings. The optimizer then refines this estimate alongside all other calibration parameters.
+
+This means you do not need hardware synchronization between your camera and IMU. The calibration recovers the offset automatically, as long as both sensors observe the same motion and the bag file covers sufficient dynamic excitation.
+
+## The optimization problem
+
+The complete calibration problem minimizes a weighted sum of squared residuals:
+
+```
+minimize:  Σ (reprojection errors)²  +  Σ (IMU errors)²  +  bias motion regularization
+```
+
+The weights come from the sensor noise models: the reprojection error is weighted by the inverse of the pixel noise variance, and the IMU errors are weighted by the inverse of the discrete-time noise covariances derived from the `imu.yaml` parameters. A bias motion regularization term (using the random walk parameters) penalizes rapid changes in the estimated bias spline.
+
+The optimizer used is Levenberg-Marquardt with a block Cholesky linear solver. It runs for up to 20 iterations by default (`maxIterations=20` in `buildProblem`).
+
+## Why batch (offline) processing is required
+
+The continuous-time approach is inherently a **batch** (offline) method. The spline is fit to the entire recording at once, which means:
+
+1. You must collect the full bag file before running calibration. Real-time incremental estimation is not supported.
+2. The bag file must cover the complete motion sequence, including some padding at the start and end. Kalibr adds `timeOffsetPadding` (0.02 s by default) on each side of the data to allow the spline to slide during time calibration.
+3. Memory and computation scale with the length of the recording. For most calibration sequences (30–120 seconds), this is not a practical concern.
+
+The benefit of offline processing is that the optimizer has access to all measurements simultaneously, enabling highly accurate joint estimation of spatial extrinsics, temporal offsets, and (optionally) IMU intrinsics.
+
+## Key references
+
+The theoretical foundation of Kalibr's estimation approach is described in two papers:
+
+- **Furgale, Rehder, Siegwart (IROS 2013)** — "Unified Temporal and Spatial Calibration for Multi-Sensor Systems." Describes how continuous-time B-spline trajectories enable joint spatial and temporal calibration of heterogeneous sensor systems including cameras and IMUs.
+
+- **Furgale, Barfoot, Sibley (ICRA 2012)** — "Continuous-Time Batch Estimation Using Temporal Basis Functions." Introduces the mathematical framework for B-spline-based continuous-time state estimation on Lie groups that underlies Kalibr's trajectory representation.
+
+For rolling shutter camera calibration, the relevant reference is:
+
+- **Oth, Furgale, Kneip, Siegwart (CVPR 2013)** — "Rolling Shutter Camera Calibration." Extends the continuous-time framework to model the per-row exposure timing of rolling shutter sensors.
+
+## Practical implications
+
+**Excite all degrees of freedom**: Because the optimizer fits a smooth spline to the observed motions, it can only estimate what it observes. Move the sensor rig with sufficient rotation and translation in all axes during the recording. Pure translation without rotation provides little information about the IMU-camera rotation.
+
+**Avoid excessive length**: Very long recordings increase computation time and may introduce more bias drift than the spline can model accurately. Aim for 30–60 seconds of active motion for camera-IMU calibration.
+
+**Check spline quality**: After calibration, examine the reprojection error plots in the PDF report. Large residuals that vary smoothly over time often indicate the spline knot density is too low for the observed motion speed. Increase `--time-calibration` padding or record at a slower motion speed.
+
+## Related pages
+
+- [IMU noise model parameters](/concepts/imu-noise-model)
+- [Camera models](/concepts/camera-models)
+- [Camera-IMU calibration guide](/guides/camera-imu-calibration)
+- [kalibr_calibrate_imu_camera reference](/reference/kalibr-calibrate-imu-camera)

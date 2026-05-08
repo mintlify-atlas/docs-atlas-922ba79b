@@ -1,0 +1,74 @@
+---
+title: "imu.yaml — IMU noise parameter configuration"
+description: "Reference for the imu.yaml file that supplies accelerometer and gyroscope noise parameters and the ROS topic to kalibr_calibrate_imu_camera."
+---
+
+The `imu.yaml` file provides Kalibr with the stochastic noise characteristics of your IMU. These parameters are used as prior information during the continuous-time batch optimization in `kalibr_calibrate_imu_camera`. Incorrect values will bias the calibration results, so they should come from the IMU datasheet or be identified through Allan variance analysis.
+
+## Example
+
+The following example is taken directly from the Kalibr source for an ADIS16448 IMU:
+
+```yaml
+accelerometer_noise_density: 0.006   # m/s^2/sqrt(Hz)
+accelerometer_random_walk:   0.0002  # m/s^3/sqrt(Hz)
+gyroscope_noise_density:     0.0004  # rad/s/sqrt(Hz)
+gyroscope_random_walk:       4.0e-06 # rad/s^2/sqrt(Hz)
+update_rate:                 200.0   # Hz
+rostopic:                    /imu0
+```
+
+## Field reference
+
+<ResponseField name="accelerometer_noise_density" type="number" required>
+  Continuous-time noise spectral density of the accelerometer, in `m/s^2/sqrt(Hz)`. This is also called the velocity random walk. Corresponds to the white noise floor of the accelerometer Allan variance curve. Must be positive.
+</ResponseField>
+
+<ResponseField name="accelerometer_random_walk" type="number" required>
+  Accelerometer bias instability (bias random walk), in `m/s^3/sqrt(Hz)`. Corresponds to the rate random walk region of the accelerometer Allan variance curve. Must be positive.
+</ResponseField>
+
+<ResponseField name="gyroscope_noise_density" type="number" required>
+  Continuous-time noise spectral density of the gyroscope, in `rad/s/sqrt(Hz)`. This is also called the angle random walk. Corresponds to the white noise floor of the gyroscope Allan variance curve. Must be positive.
+</ResponseField>
+
+<ResponseField name="gyroscope_random_walk" type="number" required>
+  Gyroscope bias instability (bias random walk), in `rad/s^2/sqrt(Hz)`. Corresponds to the rate random walk region of the gyroscope Allan variance curve. Must be positive.
+</ResponseField>
+
+<ResponseField name="update_rate" type="number" required>
+  IMU measurement rate in Hz. Kalibr uses this to convert continuous-time noise densities to discrete-time noise covariances internally. Must be positive. Use the actual hardware rate, not a downsampled rate.
+</ResponseField>
+
+<ResponseField name="rostopic" type="string" required>
+  ROS topic that publishes `sensor_msgs/Imu` messages in the bag file (e.g. `/imu0`).
+</ResponseField>
+
+## Determining parameter values
+
+**From the datasheet.** Most IMU manufacturers provide the angle random walk (ARW) and velocity random walk (VRW) in the datasheet. These are the noise densities. Bias instability figures in the datasheet correspond to the random walk parameters.
+
+**From Allan variance analysis.** For better accuracy, record a static IMU dataset and compute the Allan deviation curve. The slope of `-½` region gives the noise density; the slope of `+½` region gives the random walk. Tools such as [allan_variance_ros](https://github.com/rpng/allan_variance_ros) automate this process.
+
+<Warning>
+  Using values that are too small (overly optimistic) will cause the optimizer to over-trust IMU integration and can produce biased extrinsic results. When in doubt, use values slightly larger than the datasheet specifies.
+</Warning>
+
+## Multiple IMUs
+
+When calibrating multiple IMUs, pass one YAML file per IMU to `--imu`:
+
+```bash
+kalibr_calibrate_imu_camera \
+  --bag recording.bag \
+  --cams camchain.yaml \
+  --imu imu0.yaml imu1.yaml \
+  --imu-models calibrated calibrated \
+  --target aprilgrid.yaml
+```
+
+Each file has the same format. The first IMU listed is treated as the reference IMU for the continuous-time spline. See the [multi-IMU calibration guide](/guides/multi-imu-calibration) for details.
+
+## Relationship to output imu.yaml
+
+`kalibr_calibrate_imu_camera` writes a `<bagtag>-imu.yaml` output file that wraps the calibrated IMU parameters under named sections (`imu0`, `imu1`, …). This output format differs from the input format: the input file contains parameters for a single IMU at the top level, while the output file groups multiple IMUs by name. See [Output files](/reference/output-files) for more details on the naming convention.

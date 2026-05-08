@@ -1,0 +1,116 @@
+---
+title: "AprilGrid calibration target"
+description: "Configure, generate, and print an AprilGrid target for Kalibr camera and camera-IMU calibration. Includes YAML format and PDF generation commands."
+---
+
+An AprilGrid is a regular grid of AprilTag fiducial markers arranged with a fixed spacing between adjacent tags. Unlike a plain checkerboard, every tag in the grid carries a unique binary ID, so the detector can identify individual tags even when parts of the board are out of frame or occluded. This makes the AprilGrid the recommended target for all Kalibr calibration workflows.
+
+## YAML configuration
+
+Create a YAML file that describes the physical layout of your printed target. Pass this file to any Kalibr command with `--target aprilgrid.yaml`.
+
+```yaml
+target_type: 'aprilgrid'
+tagCols: 6           # number of tags in the horizontal direction
+tagRows: 6           # number of tags in the vertical direction
+tagSize: 0.088       # side length of one tag in meters
+tagSpacing: 0.3      # gap between tags as a fraction of tagSize
+```
+
+### Field reference
+
+| Field | Type | Description |
+|---|---|---|
+| `target_type` | string | Must be `'aprilgrid'` |
+| `tagCols` | int | Number of tags along the x-axis (minimum 3) |
+| `tagRows` | int | Number of tags along the y-axis (minimum 3) |
+| `tagSize` | float | Physical side length of one printed tag, in meters |
+| `tagSpacing` | float | Gap between adjacent tags expressed as a fraction of `tagSize` (e.g. `0.3` means the gap is 30% of the tag side length) |
+
+<Note>
+  `tagSize` must match the physically measured side length of one tag on your printed target. Measure with calipers after printing — do not rely on the nominal value you used when generating the PDF.
+</Note>
+
+## Generating the PDF
+
+Use `kalibr_create_target_pdf` to produce a print-ready PDF:
+
+```bash
+kalibr_create_target_pdf --type apriltag --nx 6 --ny 6 --tsize 0.08 --tspace 0.3
+```
+
+This generates a `target.pdf` file in the current directory. The arguments correspond directly to the YAML fields:
+
+| CLI flag | YAML field | Description |
+|---|---|---|
+| `--nx` | `tagCols` | Number of tags horizontally |
+| `--ny` | `tagRows` | Number of tags vertically |
+| `--tsize` | `tagSize` | Tag side length in meters |
+| `--tspace` | `tagSpacing` | Spacing as a fraction of tag size |
+
+### Choosing a tag family
+
+AprilTags come in several families that differ in the number of data bits and error correction. Use `--tfam` to select one:
+
+| Family | Data bits | Notes |
+|---|---|---|
+| `t36h11` | 36 | Default. Most codes available, highest robustness. |
+| `t25h9` | 25 | Fewer codes; slightly larger data bits relative to border. |
+| `t25h7` | 25 | Less error correction than t25h9. |
+| `t16h5` | 16 | Fewest codes; use only when tags must be printed very small. |
+
+```bash
+kalibr_create_target_pdf --type apriltag --nx 6 --ny 6 --tsize 0.08 --tspace 0.3 --tfam t36h11
+```
+
+<Tip>
+  Keep the default `t36h11` family unless you have a specific reason to change it. It provides the most tag codes and best detection robustness.
+</Tip>
+
+### Skipping tag IDs
+
+If you need to leave certain positions blank — for example to avoid IDs that are already in use by other tags in your environment — use `--skip-ids`:
+
+```bash
+kalibr_create_target_pdf --type apriltag --nx 6 --ny 6 --tsize 0.08 --tspace 0.3 --skip-ids "0 5 10"
+```
+
+Provide IDs as a space-separated list. The corresponding grid positions will be left empty.
+
+### Saving an EPS file
+
+Add `--eps` to also write an EPS vector file alongside the PDF:
+
+```bash
+kalibr_create_target_pdf --type apriltag --nx 6 --ny 6 --tsize 0.08 --tspace 0.3 --eps
+```
+
+See [kalibr_create_target_pdf](/reference/kalibr-create-target-pdf) for the complete flag reference.
+
+## Printing and mounting
+
+<Steps>
+  <Step title="Print at 100% scale">
+    Open the PDF and disable any fit-to-page or scaling option in your printer dialog. Print at exactly 100% so the dimensions in the PDF correspond to real-world measurements.
+  </Step>
+  <Step title="Mount on a rigid surface">
+    Glue or tape the printout to a flat, rigid backing such as an aluminum composite panel or thick foam board. Any warping will introduce systematic calibration errors.
+  </Step>
+  <Step title="Measure and update the YAML">
+    Use calipers to measure the physical side length of one printed tag. Update `tagSize` in your YAML file to this measured value.
+  </Step>
+</Steps>
+
+## How detection works
+
+The Kalibr detector locates each AprilTag independently by decoding its binary ID. It then refines the four corner positions of each tag to subpixel accuracy. The symmetric black squares printed at the inter-tag corners help with this subpixel refinement under motion blur by providing symmetric gradient patterns.
+
+Because each tag is uniquely identified, the detector can:
+
+- Recover observations from frames where only part of the board is visible
+- Reject false detections that would confuse an ID-less pattern like a checkerboard
+- Robustly associate detected corners with known 3D positions on the target
+
+<Warning>
+  If the detector reports no corners for many frames, check that your `tagSize` and `tagSpacing` values in the YAML match the printed target. A mismatch in expected geometry is a common cause of failed detection.
+</Warning>

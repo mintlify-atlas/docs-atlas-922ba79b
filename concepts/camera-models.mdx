@@ -1,0 +1,187 @@
+---
+title: "Camera projection and distortion models in Kalibr"
+description: "Reference for all camera models supported by Kalibr, including pinhole, omnidirectional, and advanced projection variants with their distortion parameters."
+---
+
+Kalibr represents every camera as a combination of a projection model and a distortion model, joined by a hyphen: `<projection>-<distortion>`. You pass this string directly to `--models` when running `kalibr_calibrate_cameras` or `kalibr_calibrate_rs_cameras`. The projection component describes how 3D points map onto the image plane, and the distortion component describes the lens aberrations applied on top of that mapping. Choosing the right combination for your optics is important — a mismatch can cause the optimizer to diverge or produce inflated reprojection errors.
+
+## Model overview
+
+| Model string | Projection | Distortion | Intrinsic parameters | Best for |
+|---|---|---|---|---|
+| `pinhole-radtan` | Pinhole | Radial-tangential | `fx, fy, cx, cy, k1, k2, p1, p2` | Standard lenses, narrow FOV |
+| `pinhole-equi` | Pinhole | Equidistant (fisheye) | `fx, fy, cx, cy, k1, k2, k3, k4` | Wide-angle fisheye lenses |
+| `pinhole-fov` | Pinhole | Field-of-view | `fx, fy, cx, cy, w` | Fisheye with single-parameter distortion |
+| `omni-none` | Omnidirectional (Mei) | None | `xi, fx, fy, cx, cy` | Catadioptric / very wide FOV |
+| `omni-radtan` | Omnidirectional (Mei) | Radial-tangential | `xi, fx, fy, cx, cy, k1, k2, p1, p2` | Catadioptric with lens distortion |
+| `eucm-none` | Extended Unified | None | `alpha, beta, fx, fy, cx, cy` | Wide-angle lenses up to ~180° |
+| `ds-none` | Double Sphere | None | `xi, alpha, fx, fy, cx, cy` | Fisheye and catadioptric lenses |
+
+Rolling shutter variants (`-rs` suffix) are available for `pinhole-radtan`, `pinhole-equi`, and `omni-radtan` when using `kalibr_calibrate_rs_cameras`.
+
+## Detailed model descriptions
+
+<AccordionGroup>
+  <Accordion title="pinhole-radtan — pinhole with radial-tangential distortion">
+    The classic pinhole-radtan combination is the most widely used model for cameras with a moderate field of view (typically under 120°). The pinhole projection maps a 3D point `(X, Y, Z)` to image coordinates using focal lengths `fx`, `fy` and principal point `cx`, `cy`.
+
+    Radial-tangential distortion (also called the Brown-Conrady model) corrects for barrel or pincushion distortion (`k1`, `k2`) and off-axis lens tilt (`p1`, `p2`).
+
+    **Parameters:** `[fx, fy, cx, cy, k1, k2, p1, p2]` — 8 total
+
+    **Constraints:** None on distortion signs; both `k1` and `k2` can be negative (barrel) or positive (pincushion).
+
+    **Use when:** Your camera has a field of view under ~120° and uses a standard (non-fisheye) lens. This is the default choice for most industrial and consumer cameras.
+
+    **Command-line model string:** `pinhole-radtan`
+
+    **Rolling shutter variant:** `pinhole-radtan-rs`
+  </Accordion>
+
+  <Accordion title="pinhole-equi — pinhole with equidistant (fisheye) distortion">
+    The equidistant model (also called the Kannala-Brandt fisheye model) uses four distortion coefficients (`k1`–`k4`) to handle wide-angle lenses where radial-tangential fails. The distortion is expressed as a polynomial of the angle of incidence, which remains well-behaved up to and beyond 180°.
+
+    **Parameters:** `[fx, fy, cx, cy, k1, k2, k3, k4]` — 8 total
+
+    **Use when:** Your camera is equipped with a fisheye lens and has a field of view greater than ~120°. This is the recommended model for most wide-angle cameras used in robotics (e.g., GoPro, Realsense T265).
+
+    **Command-line model string:** `pinhole-equi`
+
+    **Rolling shutter variant:** `pinhole-equi-rs`
+  </Accordion>
+
+  <Accordion title="pinhole-fov — pinhole with field-of-view distortion">
+    The FOV model uses a single parameter `w` (omega) to describe fisheye distortion. It is simpler than the equidistant model but can still handle moderately wide lenses. The omega parameter captures the ratio of the actual field of view to the ideal pinhole field of view.
+
+    **Parameters:** `[fx, fy, cx, cy, w]` — 5 total
+
+    **Constraints:** `w > 0`. Values near 0 approach the pinhole model; larger values represent stronger distortion.
+
+    **Use when:** You want a compact single-parameter fisheye model and do not require the accuracy of the four-coefficient equidistant model.
+
+    **Command-line model string:** `pinhole-fov`
+  </Accordion>
+
+  <Accordion title="omni-none — omnidirectional (Mei) camera without distortion">
+    The omnidirectional model due to Mei and Rives projects points via a unit sphere before applying a perspective projection. The parameter `xi` (xi) controls the position of the projection center on the optical axis; `xi = 0` recovers the standard pinhole, while larger values model catadioptric (mirror-based) cameras.
+
+    **Parameters:** `[xi, fx, fy, cx, cy]` — 5 total
+
+    **Constraints:** `xi >= 0`
+
+    **Use when:** You have a catadioptric (mirror + camera) system or an extreme wide-angle lens approaching a full hemisphere, and the lens aberrations are negligible.
+
+    **Command-line model string:** `omni-none`
+  </Accordion>
+
+  <Accordion title="omni-radtan — omnidirectional with radial-tangential distortion">
+    Extends the Mei omnidirectional model with the Brown-Conrady radial-tangential distortion coefficients. This is the appropriate choice for catadioptric systems where the lens element introduces measurable distortion on top of the mirror geometry.
+
+    **Parameters:** `[xi, fx, fy, cx, cy, k1, k2, p1, p2]` — 9 total
+
+    **Constraints:** `xi >= 0`
+
+    **Use when:** You have a catadioptric camera with noticeable lens distortion. This is the most complete model for omnidirectional cameras in Kalibr.
+
+    **Command-line model string:** `omni-radtan`
+
+    **Rolling shutter variant:** `omni-radtan-rs`
+  </Accordion>
+
+  <Accordion title="eucm-none — Extended Unified Camera Model">
+    The Extended Unified Camera Model (EUCM) generalizes the Mei model by adding a second shape parameter `beta`. Together, `alpha` and `beta` provide a compact two-parameter model that can accurately represent cameras with very wide fields of view, including fisheye lenses, without requiring a separate distortion model.
+
+    **Parameters:** `[alpha, beta, fx, fy, cx, cy]` — 6 total
+
+    **Constraints:** `0 <= alpha < 1`, `beta >= 0`
+
+    **Use when:** You want a unified model for wide-angle cameras without adding distortion parameters. EUCM can often match or exceed the accuracy of `pinhole-equi` with fewer parameters.
+
+    **Command-line model string:** `eucm-none`
+  </Accordion>
+
+  <Accordion title="ds-none — Double Sphere model">
+    The Double Sphere model represents the camera geometry using two sphere projections parameterized by `xi` and `alpha`. It was introduced to address limitations of the Extended Unified model for very large fields of view. The model has a closed-form inverse, making it efficient to use in optimization.
+
+    **Parameters:** `[xi, alpha, fx, fy, cx, cy]` — 6 total
+
+    **Constraints:** `0 <= alpha < 1`
+
+    **Use when:** You have a fisheye or catadioptric camera with a very large field of view (approaching or exceeding 180°) and want a compact, analytically invertible model.
+
+    **Command-line model string:** `ds-none`
+
+    See the [Double Sphere paper](https://arxiv.org/abs/1807.08957) for a detailed comparison of all projection models available in Kalibr.
+  </Accordion>
+</AccordionGroup>
+
+## Rolling shutter variants
+
+For rolling shutter cameras, append `-rs` to the model string and use `kalibr_calibrate_rs_cameras` instead of `kalibr_calibrate_cameras`. The rolling shutter calibrator additionally estimates the **line delay** — the time between the exposure of consecutive rows — which is stored in the output `camchain.yaml` as `line_delay`.
+
+| Standard model | Rolling shutter variant |
+|---|---|
+| `pinhole-radtan` | `pinhole-radtan-rs` |
+| `pinhole-equi` | `pinhole-equi-rs` |
+| `omni-radtan` | `omni-radtan-rs` |
+
+The rolling shutter calibrator accepts the same model strings as the global shutter calibrator (without the `-rs` suffix), so you can also calibrate a global shutter camera with it by omitting the suffix.
+
+## Choosing a model for your lens
+
+Use the following guidance when deciding which model to pass to `--models`:
+
+- **Standard lens, FOV < 120°**: use `pinhole-radtan`. It is robust, fast to optimize, and understood by most downstream tools.
+- **Fisheye or wide-angle lens, FOV > 120°**: use `pinhole-equi`. The four-coefficient equidistant model handles extreme distortion well.
+- **Single-parameter fisheye**: use `pinhole-fov` if you want a simpler model and your lens distortion can be captured by one coefficient.
+- **Catadioptric (mirror) system**: use `omni-none` or `omni-radtan` (with distortion if needed).
+- **Very wide-angle or full-hemisphere, prefer compact model**: use `eucm-none` or `ds-none`.
+
+<Note>
+When the optimizer diverges, check that your model choice matches the actual lens. A `pinhole-radtan` model fitted to a fisheye lens will fail to initialize because radial-tangential distortion cannot represent the extreme barrel distortion. Try `pinhole-equi` or `pinhole-fov` instead.
+</Note>
+
+## Output: camchain.yaml camera parameters
+
+After calibration, each camera's parameters are written to `camchain.yaml`. The exact fields depend on the model used.
+
+```yaml
+cam0:
+  camera_model: pinhole          # projection model
+  distortion_model: radtan       # distortion model
+  intrinsics: [461.629, 460.152, 362.680, 246.049]   # [fx, fy, cx, cy]
+  distortion_coeffs: [-0.27695, 0.06712, 0.00068, 0.00047]  # [k1, k2, p1, p2]
+  resolution: [752, 480]
+  rostopic: /cam0/image_raw
+```
+
+For the omnidirectional model the intrinsics vector contains the extra `xi` parameter first:
+
+```yaml
+cam0:
+  camera_model: omni
+  distortion_model: radtan
+  intrinsics: [0.80399, 833.170, 830.634, 374.078, 249.030]  # [xi, fx, fy, cx, cy]
+  distortion_coeffs: [-0.11711, 0.08168, 0.00023, -0.00010]
+  resolution: [752, 480]
+  rostopic: /cam0/image_raw
+```
+
+For EUCM and Double Sphere the first two intrinsic values are the model-specific shape parameters:
+
+```yaml
+# eucm-none
+intrinsics: [0.64629, 1.37988, 461.0, 460.0, 362.0, 246.0]  # [alpha, beta, fx, fy, cx, cy]
+
+# ds-none
+intrinsics: [-0.10295, 0.56006, 461.0, 460.0, 362.0, 246.0]  # [xi, alpha, fx, fy, cx, cy]
+```
+
+See [camchain.yaml reference](/reference/camchain-yaml) for the complete file format including extrinsics, time shifts, and camera overlap information.
+
+## Related pages
+
+- [kalibr_calibrate_cameras reference](/reference/kalibr-calibrate-cameras)
+- [kalibr_calibrate_rs_cameras reference](/reference/kalibr-calibrate-rs-cameras)
+- [camchain.yaml format](/reference/camchain-yaml)
+- [Camera-IMU calibration guide](/guides/camera-imu-calibration)

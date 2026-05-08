@@ -1,0 +1,168 @@
+---
+title: "kalibr_calibrate_cameras — multi-camera calibration"
+description: "Calibrate intrinsics and extrinsics of a multi-camera system with non-overlapping fields of view using a calibration target in a ROS bag."
+---
+
+`kalibr_calibrate_cameras` estimates the intrinsic parameters and the extrinsic baselines between two or more cameras. It reads synchronized image topics from a ROS bag, detects a calibration target in every frame, and runs a batch optimization to produce a `camchain.yaml` file, a detailed results text file, and a PDF report.
+
+## Synopsis
+
+```bash
+kalibr_calibrate_cameras --models <model> [<model> ...] \
+                          --topics <topic> [<topic> ...] \
+                          --bag <file.bag> \
+                          --target <target.yaml>
+```
+
+## Example
+
+```bash
+kalibr_calibrate_cameras \
+  --models omni-radtan pinhole-equi \
+  --target aprilgrid.yaml \
+  --bag MYROSBAG.bag \
+  --topics /cam0/image_raw /cam1/image_raw
+```
+
+`aprilgrid.yaml`:
+
+```yaml
+target_type: 'aprilgrid'
+tagCols: 6
+tagRows: 6
+tagSize: 0.088  # meters
+tagSpacing: 0.3 # fraction of tagSize
+```
+
+## Camera models
+
+Pass one `--models` value per topic, in the same order as `--topics`.
+
+| Model string | Projection | Distortion |
+|---|---|---|
+| `pinhole-radtan` | Pinhole | Radial-tangential |
+| `pinhole-equi` | Pinhole | Equidistant (fisheye) |
+| `pinhole-fov` | Pinhole | Field-of-view |
+| `omni-none` | Omnidirectional | None |
+| `omni-radtan` | Omnidirectional | Radial-tangential |
+| `eucm-none` | Extended Unified | None |
+| `ds-none` | Double Sphere | None |
+
+## Flags
+
+### Camera models
+
+<ParamField query="--models" type="string[]" required>
+  One or more camera model strings, one per topic. Accepted values: `pinhole-radtan`, `pinhole-equi`, `pinhole-fov`, `omni-none`, `omni-radtan`, `eucm-none`, `ds-none`. The number of models must match the number of `--topics` values.
+</ParamField>
+
+### Data source
+
+<ParamField query="--bag" type="string">
+  Path to the ROS bag file containing image data.
+</ParamField>
+
+<ParamField query="--topics" type="string[]" required>
+  One or more ROS image topic names, one per camera. The order must match `--models`.
+</ParamField>
+
+<ParamField query="--bag-from-to" type="float float">
+  Use only the bag data within this time window, specified as two values: start and end time in seconds from the start of the bag.
+</ParamField>
+
+<ParamField query="--bag-freq" type="float">
+  Downsample the bag to this feature extraction frequency in Hz. Useful for large bags to reduce processing time.
+</ParamField>
+
+### Calibration target configuration
+
+<ParamField query="--target" type="string" required>
+  Path to the calibration target configuration YAML file. See [target YAML format](/reference/target-yaml) for the expected structure.
+</ParamField>
+
+### Image synchronization
+
+<ParamField query="--approx-sync" type="float">
+  Time tolerance in seconds for approximate image synchronization across cameras. Default: `0.02`.
+</ParamField>
+
+### Calibrator settings
+
+<ParamField query="--qr-tol" type="float">
+  Tolerance on the factors of the QR decomposition used inside the linear solver. Default: `0.02`.
+</ParamField>
+
+<ParamField query="--mi-tol" type="float">
+  Mutual-information threshold for admitting a new image into the estimator. Higher values admit fewer images. Pass `-1` to force all images through. Default: `0.2`.
+</ParamField>
+
+<ParamField query="--no-shuffle" type="boolean">
+  Disable random shuffling of the dataset processing order. By default, views are shuffled before optimization to reduce initialization bias.
+</ParamField>
+
+### Outlier filtering options
+
+<ParamField query="--no-outliers-removal" type="boolean">
+  Disable automatic corner outlier filtering during calibration.
+</ParamField>
+
+<ParamField query="--no-final-filtering" type="boolean">
+  Disable the additional outlier filtering pass run after all views have been processed.
+</ParamField>
+
+<ParamField query="--min-views-outlier" type="integer">
+  Minimum number of raw views required before outlier statistics are initialized. Default: `20`.
+</ParamField>
+
+<ParamField query="--use-blakezisserman" type="boolean">
+  Enable the Blake-Zisserman M-estimator for robust fitting against large outlier reprojection errors.
+</ParamField>
+
+<ParamField query="--plot-outliers" type="boolean">
+  Display detected outlier corners visually during extraction. This can be slow on large datasets.
+</ParamField>
+
+### Output options
+
+<ParamField query="--verbose" type="boolean">
+  Enable detailed debug-level logging. Enabling this flag also disables interactive plots.
+</ParamField>
+
+<ParamField query="--show-extraction" type="boolean">
+  Display each image during calibration target extraction. Enabling this flag disables interactive plots.
+</ParamField>
+
+<ParamField query="--plot" type="boolean">
+  Plot reprojection errors after each view is added during calibration. This can be slow.
+</ParamField>
+
+<ParamField query="--dont-show-report" type="boolean">
+  Do not open the PDF report on screen after calibration finishes.
+</ParamField>
+
+<ParamField query="--export-poses" type="boolean">
+  Export the optimized camera poses to a CSV file with columns: `time_ns`, `position`, `quaternion`.
+</ParamField>
+
+## Output files
+
+After a successful run, three files are written next to the bag file:
+
+| File | Description |
+|---|---|
+| `<bag>-camchain.yaml` | Camera chain calibration in [camchain YAML format](/reference/camchain-yaml) |
+| `<bag>-results-cam.txt` | Detailed numeric results for all cameras |
+| `<bag>-report-cam.pdf` | PDF calibration report with reprojection error plots |
+| `<bag>-poses-cam0.csv` | Optimized poses (only with `--export-poses`) |
+
+<Tip>
+  If optimization diverges, Kalibr automatically re-initializes intrinsics and retries up to three times. Use `--verbose` to inspect the extraction quality if it keeps failing.
+</Tip>
+
+## Related pages
+
+- [Multi-camera calibration guide](/guides/multi-camera-calibration)
+- [Camera models](/concepts/camera-models)
+- [Target YAML format](/reference/target-yaml)
+- [Camchain YAML format](/reference/camchain-yaml)
+- [Output files](/reference/output-files)

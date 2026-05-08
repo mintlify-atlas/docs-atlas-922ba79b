@@ -1,133 +1,75 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
-icon: 'star'
+title: "Kalibr: Visual-Inertial Calibration Toolbox"
+description: "Kalibr is an open-source calibration toolbox for multi-camera systems, camera-IMU setups, and rolling shutter cameras using ROS bag data."
 ---
 
-## Setting up
+Kalibr is a robust calibration toolbox developed at ETH Zurich's Autonomous Systems Lab. It solves challenging calibration problems for robotics and computer vision systems — from intrinsic and extrinsic multi-camera calibration to spatial and temporal camera-IMU calibration — using continuous-time batch estimation over ROS bag recordings.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install Kalibr via Docker or build from source in a ROS catkin workspace.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Run your first camera calibration in minutes with an AprilGrid target.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Calibration Guides" icon="crosshairs" href="/guides/multi-camera-calibration">
+    Step-by-step guides for camera, camera-IMU, and rolling shutter calibration.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="CLI Reference" icon="terminal" href="/reference/kalibr-calibrate-cameras">
+    Full reference for all Kalibr command-line tools and their flags.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## What Kalibr calibrates
 
-Everything you need to create world-class documentation.
+Kalibr handles four distinct calibration problems, each with a dedicated CLI tool:
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
+<CardGroup cols={2}>
+  <Card title="Multi-Camera Calibration" icon="camera" href="/guides/multi-camera-calibration">
+    Intrinsic and extrinsic calibration of camera systems with non-overlapping fields of view.
   </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
+  <Card title="Camera-IMU Calibration" icon="gauge" href="/guides/camera-imu-calibration">
+    Spatial and temporal calibration of an IMU with respect to a camera chain.
   </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
+  <Card title="Multi-IMU Calibration" icon="microchip" href="/guides/multi-imu-calibration">
+    Calibrate multiple IMUs relative to a base inertial sensor with an aiding camera.
   </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
+  <Card title="Rolling Shutter Calibration" icon="film" href="/guides/rolling-shutter-calibration">
+    Full intrinsic calibration including shutter parameters for rolling shutter cameras.
   </Card>
-</Columns>
+</CardGroup>
 
-## Make your content agent ready
+## Getting started
 
-Make your docs work for humans and AI agents alike.
+<Steps>
+  <Step title="Install Kalibr">
+    Pull the Docker image for your Ubuntu version, or build from source inside a ROS catkin workspace. See the [installation guide](/installation) for details.
+  </Step>
+  <Step title="Print a calibration target">
+    Generate an AprilGrid or checkerboard PDF with `kalibr_create_target_pdf` and print it at the correct physical size.
+  </Step>
+  <Step title="Record a ROS bag">
+    Move the calibration target in front of your sensors while recording camera and IMU topics to a ROS bag file.
+  </Step>
+  <Step title="Run calibration">
+    Execute the appropriate Kalibr command with your bag file, target configuration, and camera model arguments to produce YAML calibration results and a PDF report.
+  </Step>
+</Steps>
 
-<Columns cols={2}>
-  <Card
-    title="Prompt component"
-    icon="robot"
-    href="/agent-ready/prompt"
-  >
-    Embed shareable AI prompts readers can copy or open in Cursor.
-  </Card>
-  <Card
-    title="Visibility"
-    icon="eye"
-    href="/agent-ready/visibility"
-  >
-    Show different content to humans and agents reading your docs.
-  </Card>
-  <Card
-    title="Contextual menu"
-    icon="bolt"
-    href="/agent-ready/contextual"
-  >
-    Give readers one-click access to Claude, ChatGPT, Cursor, and more.
-  </Card>
-  <Card
-    title="AI coding tools"
-    icon="wand-magic-sparkles"
-    href="/ai-tools/claude-code"
-  >
-    Set up Claude Code, Cursor, or Windsurf with Mintlify's skill.
-  </Card>
-</Columns>
+## Supported camera models
 
-## Need inspiration?
+Kalibr supports a wide range of projection and distortion models out of the box:
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+| Model string | Projection | Distortion |
+|---|---|---|
+| `pinhole-radtan` | Pinhole | Radial-tangential |
+| `pinhole-equi` | Pinhole | Equidistant (fisheye) |
+| `pinhole-fov` | Pinhole | Field-of-view |
+| `omni-none` | Omnidirectional | None |
+| `omni-radtan` | Omnidirectional | Radial-tangential |
+| `eucm-none` | Extended Unified | None |
+| `ds-none` | Double Sphere | None |
+
+<Tip>
+  Not sure which model to use? Start with `pinhole-radtan` for standard cameras and `pinhole-equi` for wide-angle or fisheye lenses. See [Camera Models](/concepts/camera-models) for guidance.
+</Tip>

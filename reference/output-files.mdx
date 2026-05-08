@@ -1,0 +1,139 @@
+---
+title: "Kalibr output files and calibration reports"
+description: "Reference for all files written by kalibr_calibrate_cameras and kalibr_calibrate_imu_camera: YAML results, text summaries, PDF reports, and pose CSV files."
+---
+
+Kalibr writes all output files to the same directory as the input bag file, using the bag file's base name (without the `.bag` extension) as a prefix. This prefix is called the **bagtag**.
+
+For example, if you run:
+
+```bash
+kalibr_calibrate_cameras --bag /data/recordings/stereo_april.bag ...
+```
+
+The bagtag is `/data/recordings/stereo_april`, and output files are written as `/data/recordings/stereo_april-camchain.yaml`, `/data/recordings/stereo_april-results-cam.txt`, and so on.
+
+## Camera calibration outputs
+
+These files are produced by `kalibr_calibrate_cameras`.
+
+```text
+stereo_april-camchain.yaml
+stereo_april-results-cam.txt
+stereo_april-report-cam.pdf
+stereo_april-poses-cam0.csv   # only with --export-poses
+```
+
+<ResponseField name="<bagtag>-camchain.yaml" type="YAML">
+  Camera chain calibration parameters: intrinsics, distortion, resolution, ROS topic, and inter-camera extrinsics (`T_cn_cnm1`) for each camera in the chain. This file is the primary input to `kalibr_calibrate_imu_camera` via `--cams`. See [camchain.yaml](/reference/camchain-yaml) for the full field reference.
+</ResponseField>
+
+<ResponseField name="<bagtag>-results-cam.txt" type="text">
+  Human-readable calibration summary. Contains reprojection error statistics (mean, median, standard deviation) per camera, the optimized intrinsic and distortion parameters, and the inter-camera baseline transforms with their norms. Useful for quickly assessing calibration quality without opening the PDF.
+</ResponseField>
+
+<ResponseField name="<bagtag>-report-cam.pdf" type="PDF">
+  Multi-page PDF calibration report. Includes:
+
+  - Text summary of calibration results and error statistics
+  - Per-camera reprojection error scatter plots (one point per corner detection)
+  - Reprojection error histograms
+  - Camera rig visualization (for multi-camera setups)
+</ResponseField>
+
+<ResponseField name="<bagtag>-poses-cam0.csv" type="CSV">
+  Optimized target poses sampled at camera rate. Only written when `--export-poses` is passed. Columns:
+
+  ```text
+  #timestamp, p_RS_R_x [m], p_RS_R_y [m], p_RS_R_z [m], q_RS_w [], q_RS_x [], q_RS_y [], q_RS_z []
+  1609459200000000000,0.123456,-0.234567,1.345678,0.999123,0.012345,-0.023456,0.001234
+  ```
+
+  Timestamps are in nanoseconds (integer). Position is in meters. Quaternion is in `w, x, y, z` order.
+</ResponseField>
+
+## Camera-IMU calibration outputs
+
+These files are produced by `kalibr_calibrate_imu_camera`.
+
+```text
+stereo_april-camchain-imucam.yaml
+stereo_april-imu.yaml
+stereo_april-results-imucam.txt
+stereo_april-report-imucam.pdf
+stereo_april-poses-imucam-imu0.csv   # only with --export-poses
+```
+
+<ResponseField name="<bagtag>-camchain-imucam.yaml" type="YAML">
+  Extended camera chain that adds IMU extrinsics to every camera entry. Specifically, each `camN` block gains `T_cam_imu` (camera-to-IMU transformation) and `timeshift_cam_imu` (temporal offset). This is the file you pass to VIO frameworks and to the exporter tools. See [camchain.yaml](/reference/camchain-yaml) for the full field reference.
+</ResponseField>
+
+<ResponseField name="<bagtag>-imu.yaml" type="YAML">
+  Calibrated IMU parameters grouped by sensor name. The structure wraps the noise parameters from the input `imu.yaml` files under named keys (`imu0`, `imu1`, …) and adds calibrated fields such as `T_i_b` and `time_offset`. Example:
+
+  ```yaml
+  imu0:
+    T_i_b:
+    - [1.0, 0.0, 0.0, 0.0]
+    - [0.0, 1.0, 0.0, 0.0]
+    - [0.0, 0.0, 1.0, 0.0]
+    - [0.0, 0.0, 0.0, 1.0]
+    accelerometer_noise_density: 0.006
+    accelerometer_random_walk: 0.0002
+    gyroscope_noise_density: 0.0004
+    gyroscope_random_walk: 4.0e-06
+    model: calibrated
+    rostopic: /imu0
+    time_offset: -8.0e-05
+    update_rate: 200.0
+  ```
+</ResponseField>
+
+<ResponseField name="<bagtag>-results-imucam.txt" type="text">
+  Human-readable calibration summary for the camera-IMU calibration. Contains:
+
+  - Normalized residuals and raw residuals (mean, median, std) for reprojection, gyroscope, and accelerometer errors
+  - Per-camera `T_ci` (IMU-to-camera) and `T_ic` (camera-to-IMU) transformation matrices
+  - Per-camera time shift values
+  - Inter-camera baselines (for multi-camera setups)
+  - Gravity vector in target coordinates
+  - Calibration configuration (camera models, target parameters, IMU parameters)
+</ResponseField>
+
+<ResponseField name="<bagtag>-report-imucam.pdf" type="PDF">
+  Multi-page PDF report for the camera-IMU calibration. Includes:
+
+  - Text summary pages (calibration results and configuration)
+  - 3D trajectory plot of the estimated IMU poses
+  - Per-IMU measurement rate plots
+  - Per-IMU acceleration plots and per-axis acceleration error
+  - Per-IMU accelerometer bias evolution
+  - Per-IMU angular velocity plots and per-axis angular velocity error
+  - Per-IMU gyroscope bias evolution
+  - Per-camera reprojection error scatter plots
+</ResponseField>
+
+<ResponseField name="<bagtag>-poses-imucam-imu0.csv" type="CSV">
+  Optimized IMU body poses sampled at IMU measurement times. Only written when `--export-poses` is passed. Columns:
+
+  ```text
+  #timestamp, p_RS_R_x [m], p_RS_R_y [m], p_RS_R_z [m], q_RS_w [], q_RS_x [], q_RS_y [], q_RS_z []
+  1609459200000000000,0.123456,-0.234567,1.345678,0.999123,0.012345,-0.023456,0.001234
+  ```
+
+  Timestamps are in nanoseconds (integer). Position is in meters. Quaternion is in `w, x, y, z` order. This format matches the EuRoC/ETH groundtruth CSV convention.
+</ResponseField>
+
+## Interpreting calibration quality
+
+Good camera calibration typically shows mean reprojection errors below 0.5 px. Errors above 1 px suggest a poor target extraction, an inappropriate camera model, or real optical issues (e.g. strong vignetting or motion blur in the bag).
+
+For camera-IMU calibration, inspect the gyroscope and accelerometer residuals in the text report. Large residuals relative to the noise density values in `imu.yaml` indicate the IMU noise parameters may be underestimated, or that there are synchronization problems in the bag.
+
+## Related pages
+
+- [camchain.yaml format](/reference/camchain-yaml)
+- [imu.yaml format](/reference/imu-yaml)
+- [Exporting to VIO frameworks](/reference/exporters)
+- [kalibr_calibrate_cameras reference](/reference/kalibr-calibrate-cameras)
+- [kalibr_calibrate_imu_camera reference](/reference/kalibr-calibrate-imu-camera)
